@@ -64,7 +64,7 @@ class TestTeacherInviteView:
         )
         assert "/complete-teacher-invitation/" in response.data["invitation_url"]
 
-        new_user = User.objects.get(email="newteacher@example.com")
+        new_user = User.objects.by_email("newteacher@example.com").get()
         assert new_user.name == "New"
         assert new_user.father_name == "Teacher"
         assert new_user.grandfather_name == "Test"
@@ -133,8 +133,9 @@ class TestTeacherInviteView:
         response = view(request)
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert User.objects.filter(email="superteacher@example.com").exists()
-        assert Teacher.objects.filter(user__email="superteacher@example.com").exists()
+        assert User.objects.by_email("superteacher@example.com").exists()
+        superteacher_user = User.objects.by_email("superteacher@example.com").get()
+        assert Teacher.objects.filter(user=superteacher_user).exists()
         assert response.data["invitation_url"].startswith(settings.FRONTEND_DOMAIN)
         assert mock_send_email.called
 
@@ -171,9 +172,12 @@ class TestTeacherInviteView:
         response = view(request)
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert User.objects.filter(email="branchadminteacher@example.com").exists()
+        assert User.objects.by_email("branchadminteacher@example.com").exists()
+        branch_teacher_user = User.objects.by_email(
+            "branchadminteacher@example.com",
+        ).get()
         assert Teacher.objects.filter(
-            user__email="branchadminteacher@example.com",
+            user=branch_teacher_user,
             branch=branch,
         ).exists()
         assert response.data["invitation_url"].startswith(settings.FRONTEND_DOMAIN)
@@ -207,9 +211,9 @@ class TestTeacherInviteView:
             view(request)
 
         assert mock_send_email.called
-        assert not User.objects.filter(email="rollbackteacher@example.com").exists()
+        assert not User.objects.by_email("rollbackteacher@example.com").exists()
         assert not Teacher.objects.filter(
-            user__email="rollbackteacher@example.com",
+            user__in=User.objects.by_email("rollbackteacher@example.com"),
         ).exists()
 
     @patch("accounts.email.send_email_task.delay")
@@ -259,7 +263,7 @@ class TestTeacherInviteView:
         assert "/complete-teacher-invitation/" in response.data["invitation_url"]
         user.refresh_from_db()
         teacher.refresh_from_db()
-        assert User.objects.filter(email="existingteacher@example.com").count() == 1
+        assert User.objects.by_email("existingteacher@example.com").count() == 1
         assert user.name == "Updated"
         assert user.father_name == "Teacher"
         assert user.grandfather_name == "Profile"

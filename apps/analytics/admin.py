@@ -14,12 +14,7 @@ class InterventionLogAdmin(admin.ModelAdmin):
         "created_at",
     )
     list_filter = ("intervention_type", "severity", "status", "organization")
-    search_fields = (
-        "student__first_name",
-        "student__last_name",
-        "title",
-        "description",
-    )
+    search_fields = ("title", "description")
     readonly_fields = ("source_model", "source_id", "created_at", "updated_at")
 
     @admin.display(description="Student")

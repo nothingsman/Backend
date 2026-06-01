@@ -24,19 +24,14 @@ class InterventionLogViewSet(viewsets.ModelViewSet):
       ?status=OPEN|IN_PROGRESS|RESOLVED|DISMISSED
 
     Text search (?search=):
-      Student name, title, description
+      Title, description
     """
 
     lookup_field = "id"
     permission_classes = [IsAuthenticated]
     serializer_class = InterventionLogSerializer
     filter_backends = [SearchFilter]
-    search_fields = [
-        "student__first_name",
-        "student__last_name",
-        "title",
-        "description",
-    ]
+    search_fields = ["title", "description"]
 
     def get_queryset(self):
         qs = InterventionLog.objects.select_related("student", "organization")

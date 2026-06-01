@@ -1,3 +1,6 @@
+import base64
+import hashlib
+
 from .base import *  # noqa: F403
 from .base import INSTALLED_APPS
 from .base import MIDDLEWARE
@@ -12,6 +15,16 @@ SECRET_KEY = env(
     "DJANGO_SECRET_KEY",
     default="CBE9Ipus3hIZnaFUBIeMcefkT4vTEHhHbGXiZ0qjwvU2gcGaYAZWyhmWgA3vdj3J",
 )
+PII_ENCRYPTION_ACTIVE_KEY = env(
+    "PII_ENCRYPTION_ACTIVE_KEY",
+    default=base64.urlsafe_b64encode(
+        hashlib.sha256(f"{SECRET_KEY}:pii".encode()).digest(),
+    ).decode("utf-8"),
+)
+PII_ENCRYPTION_KEYS = {
+    **PII_ENCRYPTION_LEGACY_KEYS,  # noqa: F405
+    PII_ENCRYPTION_ACTIVE_KEY_VERSION: PII_ENCRYPTION_ACTIVE_KEY,  # noqa: F405
+}
 # https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
 ALLOWED_HOSTS = [
     "localhost",

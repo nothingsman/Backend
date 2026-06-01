@@ -218,7 +218,7 @@ class TeacherBulkImportService:
             return
 
         seen_emails.add(normalized_email)
-        if User.objects.filter(email__iexact=email).exists():
+        if User.objects.by_email(email).exists():
             row_errors["email"] = ["A user with this email already exists."]
 
     def _validate_employee_id(
@@ -252,7 +252,7 @@ class TeacherBulkImportService:
             row_errors["phone_number"] = ["Phone number is required."]
             return
 
-        if User.objects.filter(phone_number=phone_number).exists():
+        if User.objects.by_phone_number(phone_number).exists():
             row_errors["phone_number"] = [
                 "A user with this phone number already exists.",
             ]

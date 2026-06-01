@@ -35,7 +35,7 @@ class TestUserAdmin:
             },
         )
         assert response.status_code == HTTPStatus.FOUND
-        assert User.objects.filter(email="test@example.com").exists()
+        assert User.objects.by_email("test@example.com").exists()
 
     def test_view_user(self, admin_client):
         user = User.objects.filter(is_superuser=True).get()

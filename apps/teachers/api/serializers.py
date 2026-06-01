@@ -6,6 +6,7 @@ from teachers.models import TeacherQualification
 from teachers.models import TeacherSubjectAssignment
 
 from core.api.access import user_can_access_branch
+from core.services.pii import normalize_phone_number
 from media.api.serializers import MediaFileReferenceField
 
 # ---------------------------------------------------------------------------
@@ -355,7 +356,11 @@ class TeacherInviteSerializer(serializers.Serializer):
 
         request = self.context.get("request")
         branch = attrs.get("branch")
-        existing_user = User.objects.filter(email=attrs["email"]).first()
+        try:
+            attrs["phone_number"] = normalize_phone_number(attrs["phone_number"])
+        except ValueError as err:
+            raise ValidationError({"phone_number": str(err)}) from err
+        existing_user = User.objects.by_email(attrs["email"]).first()
 
         if existing_user is not None:
             if existing_user.role != User.Role.TEACHER or existing_user.is_active:
@@ -364,7 +369,7 @@ class TeacherInviteSerializer(serializers.Serializer):
                 raise ValidationError({"email": self.EMAIL_VALIDATION_ERROR_MESSAGE})
             attrs["existing_user"] = existing_user
 
-        phone_number_conflict = User.objects.filter(phone_number=attrs["phone_number"])
+        phone_number_conflict = User.objects.by_phone_number(attrs["phone_number"])
         if existing_user is not None:
             phone_number_conflict = phone_number_conflict.exclude(pk=existing_user.pk)
         if phone_number_conflict.exists():

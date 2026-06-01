@@ -49,24 +49,6 @@ def _hash_otp_code(code: str) -> str:
     return hashlib.sha256(code.encode("utf-8")).hexdigest()
 
 
-def normalize_phone_number(phone_number: str) -> str:
-    stripped = phone_number.strip()
-    if not stripped:
-        message = "Phone number is required."
-        raise ValueError(message)
-
-    has_plus = stripped.startswith("+")
-    digits = "".join(character for character in stripped if character.isdigit())
-    if not digits:
-        message = "Phone number must contain digits."
-        raise ValueError(message)
-    if len(digits) < PHONE_NUMBER_MIN_DIGITS or len(digits) > PHONE_NUMBER_MAX_DIGITS:
-        message = "Phone number must contain between 10 and 15 digits."
-        raise ValueError(message)
-
-    return f"+{digits}" if has_plus else digits
-
-
 def get_frontend_domain_for_user(user: User | None) -> str:
     role = getattr(user, "role", "")
     role_domains = getattr(settings, "FRONTEND_ROLE_DOMAINS", {})

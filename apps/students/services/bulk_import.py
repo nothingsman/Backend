@@ -184,7 +184,7 @@ class ParentBulkImportService(_BulkImportServiceBase):
         self._validate_parent_email(email, row_errors, seen_emails)
         self._validate_parent_phone(phone_number, row_errors, seen_phones)
 
-        existing_user = User.objects.filter(phone_number=phone_number).first()
+        existing_user = User.objects.by_phone_number(phone_number).first()
         self._validate_existing_parent_user(existing_user, email, row_errors)
 
         return {
@@ -252,7 +252,7 @@ class ParentBulkImportService(_BulkImportServiceBase):
         row_errors: dict[str, list[str]],
     ) -> None:
         if existing_user is None:
-            if email and User.objects.filter(email__iexact=email).exists():
+            if email and User.objects.by_email(email).exists():
                 row_errors["email"] = [
                     "This email is already registered to another user.",
                 ]
@@ -269,9 +269,7 @@ class ParentBulkImportService(_BulkImportServiceBase):
 
         if email and existing_user.email != email:
             email_in_use = (
-                User.objects.exclude(id=existing_user.id)
-                .filter(email__iexact=email)
-                .exists()
+                User.objects.by_email(email).exclude(id=existing_user.id).exists()
             )
             if email_in_use:
                 row_errors["email"] = [
@@ -653,7 +651,12 @@ class StudentBulkImportService(_BulkImportServiceBase):
             self._append_parent_email_error(row_errors, f"Invalid email: {email}")
             return None
 
-        parent_profile = Parent.objects.filter(user__email__iexact=email).first()
+        parent_user = User.objects.by_email(email).first()
+        parent_profile = (
+            Parent.objects.filter(user=parent_user).first()
+            if parent_user is not None
+            else None
+        )
         if parent_profile is None:
             self._append_parent_email_error(
                 row_errors,

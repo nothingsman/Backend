@@ -63,7 +63,7 @@ class TestBranchAdminInviteView:
         assert "/complete-invitation/" in response.data["invitation_url"]
 
         # Verify user created
-        new_user = User.objects.get(email="newadmin@example.com")
+        new_user = User.objects.by_email("newadmin@example.com").get()
         assert new_user.name == "New"
         assert new_user.role == User.Role.BRANCH_ADMIN
         assert new_user.is_active is False
@@ -150,7 +150,7 @@ class TestBranchAdminInviteView:
         assert "/complete-invitation/" in response.data["invitation_url"]
         user.refresh_from_db()
         admin.refresh_from_db()
-        assert User.objects.filter(email="existingadmin@example.com").count() == 1
+        assert User.objects.by_email("existingadmin@example.com").count() == 1
         assert user.name == "Updated"
         assert user.father_name == "Branch"
         assert user.grandfather_name == "Lead"

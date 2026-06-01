@@ -3,27 +3,60 @@ from django.contrib.auth.models import BaseUserManager
 from django.db import models
 from django.db.models import CharField
 from django.db.models import DateTimeField
-from django.db.models import EmailField
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from students.models import Parent
 from students.models import ParentStudentLink
 
+from core.fields import EncryptedCharField
+from core.fields import EncryptedEmailField
 from core.models import TimeStampedModel
 from core.models import UUIDModel
+from core.services.pii import build_lookup_hash
+from core.services.pii import normalize_email_value
+from core.services.pii import normalize_phone_number
+
+
+class UserQuerySet(models.QuerySet):
+    def by_email(self, email: str):
+        normalized_email = normalize_email_value(email)
+        lookup_hash = build_lookup_hash(normalized_email, context="accounts.user.email")
+        return self.filter(email_lookup_hash=lookup_hash)
+
+    def by_phone_number(self, phone_number: str):
+        normalized_phone = normalize_phone_number(phone_number)
+        lookup_hash = build_lookup_hash(
+            normalized_phone,
+            context="accounts.user.phone_number",
+        )
+        return self.filter(phone_lookup_hash=lookup_hash)
 
 
 class UserManager(BaseUserManager):
+    use_in_migrations = True
+
+    def get_queryset(self):
+        return UserQuerySet(self.model, using=self._db)
+
     def create_user(self, email=None, password=None, **extra_fields):
         role = extra_fields.get("role")
         if not email and role != "PARENT":
             raise ValueError(_("The Email field must be set"))
         if email:
-            email = self.normalize_email(email)
+            email = normalize_email_value(email)
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
+
+    def get_by_natural_key(self, username):
+        return self.get_queryset().by_email(username).get()
+
+    def by_email(self, email: str):
+        return self.get_queryset().by_email(email)
+
+    def by_phone_number(self, phone_number: str):
+        return self.get_queryset().by_phone_number(phone_number)
 
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
@@ -49,30 +82,78 @@ class User(UUIDModel, TimeStampedModel, AbstractUser):
         PARENT = "PARENT", _("Parent")
 
     username = None
-    email = EmailField(_("Email Address"), unique=True, null=True, blank=True)
-    name = CharField(_("First Name"), blank=True, max_length=255)
-    father_name = CharField(_("Father's Name"), blank=True, max_length=255)
-    grandfather_name = CharField(_("Grandfather's Name"), blank=True, max_length=255)
+    email = EncryptedEmailField(
+        _("Email Address"),
+        null=True,
+        blank=True,
+        max_length=255,
+    )
+    email_lookup_hash = models.CharField(
+        _("Email Lookup Hash"),
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        editable=False,
+    )
+    name = EncryptedCharField(_("First Name"), blank=True, max_length=255)
+    father_name = EncryptedCharField(_("Father's Name"), blank=True, max_length=255)
+    grandfather_name = EncryptedCharField(
+        _("Grandfather's Name"),
+        blank=True,
+        max_length=255,
+    )
     role = CharField(
         _("Role"),
         max_length=20,
         choices=Role.choices,
         blank=True,
     )
-    phone_number = CharField(
+    phone_number = EncryptedCharField(
         _("Phone Number"),
         null=True,
         blank=True,
-        unique=True,
         max_length=20,
     )
-    address = CharField(_("Address"), blank=True, max_length=255)
+    phone_lookup_hash = models.CharField(
+        _("Phone Lookup Hash"),
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        editable=False,
+    )
+    address = EncryptedCharField(_("Address"), blank=True, max_length=255)
     verified_at = DateTimeField(_("Verified At"), blank=True, null=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["name"]
 
     objects = UserManager()  # type: ignore[assignment]
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if self.email:
+            self.email = normalize_email_value(self.email)
+        self.email_lookup_hash = build_lookup_hash(
+            self.email,
+            context="accounts.user.email",
+        )
+
+        if self.phone_number:
+            self.phone_number = normalize_phone_number(self.phone_number)
+        self.phone_lookup_hash = build_lookup_hash(
+            self.phone_number,
+            context="accounts.user.phone_number",
+        )
+        if update_fields is not None:
+            update_fields_set = set(update_fields)
+            if {"email", "email_lookup_hash"} & update_fields_set:
+                update_fields_set.update({"email", "email_lookup_hash"})
+            if {"phone_number", "phone_lookup_hash"} & update_fields_set:
+                update_fields_set.update({"phone_number", "phone_lookup_hash"})
+            kwargs["update_fields"] = list(update_fields_set)
+        super().save(*args, **kwargs)
 
     def get_absolute_url(self) -> str:
         """Get URL for user's detail view.

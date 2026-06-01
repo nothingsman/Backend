@@ -8,6 +8,7 @@ from branches.models import BranchAdmin
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 from django.db.models import QuerySet
+from teachers.models import Teacher
 
 if TYPE_CHECKING:
     from academics.models import AcademicYear
@@ -74,18 +75,33 @@ def get_parent_organization_ids(user: Any) -> list[str]:
     ]
 
 
+def get_teacher_branch_ids(user: Any) -> list[str]:
+    if not getattr(user, "is_authenticated", False):
+        return []
+
+    return [
+        str(branch_id)
+        for branch_id in Teacher.objects.filter(user=user).values_list(
+            "branch_id",
+            flat=True,
+        )
+    ]
+
+
 def scope_queryset_for_user(
     queryset: QuerySet,
     user: Any,
     *,
     organization_lookup: str = "organization",
     branch_lookup: str | None = "branch",
+    include_teacher_branches: bool = False,
 ) -> QuerySet:
     return queryset.filter(
         user_resource_access_filter(
             user,
             organization_lookup=organization_lookup,
             branch_lookup=branch_lookup,
+            include_teacher_branches=include_teacher_branches,
         ),
     ).distinct()
 
@@ -188,6 +204,7 @@ def user_resource_access_filter(
     *,
     organization_lookup: str = "organization",
     branch_lookup: str | None = "branch",
+    include_teacher_branches: bool = False,
 ) -> Q:
     if not user.is_authenticated:
         return Q(pk__in=[])
@@ -211,6 +228,8 @@ def user_resource_access_filter(
     branch_ids = get_branch_admin_branch_ids(user)
     parent_branch_ids = get_parent_branch_ids(user)
     branch_ids = [*branch_ids, *parent_branch_ids]
+    if include_teacher_branches:
+        branch_ids.extend(get_teacher_branch_ids(user))
 
     if branch_lookup is not None and branch_ids:
         if branch_lookup == "self":
@@ -242,6 +261,27 @@ def user_can_access_branch(user: Any, branch: Branch) -> bool:
             branch=branch,
             status=BranchAdmin.Status.ACTIVE,
         ).exists()
+        or Teacher.objects.filter(
+            user=user,
+            branch=branch,
+        ).exists()
+    )
+
+
+def user_can_manage_branch(user: Any, branch: Branch) -> bool:
+    if not getattr(user, "is_authenticated", False):
+        return False
+
+    if user.is_superuser:
+        return True
+
+    return (
+        branch.organization.owner_id == user.id
+        or BranchAdmin.objects.filter(
+            user=user,
+            branch=branch,
+            status=BranchAdmin.Status.ACTIVE,
+        ).exists()
     )
 
 
@@ -257,7 +297,7 @@ def user_can_manage_attendance(
     if not getattr(user, "is_authenticated", False):
         return False
 
-    if user_can_access_branch(user, section.branch):
+    if user_can_manage_branch(user, section.branch):
         return True
 
     return section.homeroom_assignments.filter(
