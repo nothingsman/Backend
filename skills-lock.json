@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "django-drf": {
+      "source": "prowler-cloud/prowler",
+      "sourceType": "github",
+      "skillPath": "skills/django-drf/SKILL.md",
+      "computedHash": "1009354681aab9c1556510eba03ac150239517ff948b4bac29ac87397eb919c8"
+    }
+  }
+}
