@@ -37,6 +37,28 @@ def test_phone_number_migration_normalizes_existing_values():
 
 
 @pytest.mark.django_db(transaction=True)
+def test_phone_number_migration_nulls_invalid_legacy_values():
+    try:
+        old_executor = migrate_to([("accounts", "0005_parentloginotp")])
+        old_user_model = old_executor.loader.project_state(
+            [("accounts", "0005_parentloginotp")],
+        ).apps.get_model("accounts", "User")
+        user = old_user_model.objects.create(
+            email="migration-invalid@example.com",
+            phone_number="12345",
+        )
+
+        migrate_to([LATEST_MIGRATION])
+
+        from accounts.models import User
+
+        migrated_user = User.objects.get(pk=user.pk)
+        assert migrated_user.phone_number is None
+    finally:
+        migrate_to([LATEST_MIGRATION])
+
+
+@pytest.mark.django_db(transaction=True)
 def test_phone_number_migration_fails_on_canonical_collision():
     old_user_model = None
     try:

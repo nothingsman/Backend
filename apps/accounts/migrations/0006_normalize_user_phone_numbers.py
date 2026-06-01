@@ -25,11 +25,16 @@ def normalize_phone_number(phone_number: str) -> str:
 def normalize_existing_user_phone_numbers(apps, schema_editor):
     User = apps.get_model("accounts", "User")
     conflicts: dict[str, list[tuple[str, str]]] = {}
-    normalized_rows: list[tuple[str, str]] = []
+    normalized_rows: list[tuple[str, str | None]] = []
     seen_by_phone: dict[str, list[tuple[str, str]]] = {}
 
     for user in User.objects.exclude(phone_number__isnull=True).exclude(phone_number=""):
-        normalized_phone_number = normalize_phone_number(user.phone_number)
+        try:
+            normalized_phone_number = normalize_phone_number(user.phone_number)
+        except ValueError:
+            normalized_rows.append((str(user.pk), None))
+            continue
+
         normalized_rows.append((str(user.pk), normalized_phone_number))
         seen_by_phone.setdefault(normalized_phone_number, []).append(
             (str(user.pk), user.phone_number),
