@@ -34,7 +34,7 @@ def test_user_signup_accepts_extended_profile_fields(api_client: APIClient):
 
     assert response.status_code == HTTPStatus.CREATED
 
-    user = User.objects.get(email=payload["email"])
+    user = User.objects.by_email(payload["email"]).get()
     assert user.name == payload["name"]
     assert user.father_name == payload["father_name"]
     assert user.grandfather_name == payload["grandfather_name"]
@@ -58,7 +58,7 @@ def test_user_signup_allows_address_to_be_omitted(api_client: APIClient):
 
     assert response.status_code == HTTPStatus.CREATED
 
-    user = User.objects.get(email=payload["email"])
+    user = User.objects.by_email(payload["email"]).get()
     assert user.address == ""
 
 
@@ -73,7 +73,7 @@ def test_user_signup_does_not_require_username(api_client: APIClient):
     response = api_client.post("/auth/users/", payload, format="json")
 
     assert response.status_code == HTTPStatus.CREATED
-    assert User.objects.filter(email=payload["email"]).exists()
+    assert User.objects.by_email(payload["email"]).exists()
 
 
 @pytest.mark.django_db
@@ -90,7 +90,7 @@ def test_user_signup_allows_role_selection(api_client: APIClient):
     assert response.status_code == HTTPStatus.CREATED
     assert response.data["role"] == User.Role.ORGANIZATION
 
-    user = User.objects.get(email=payload["email"])
+    user = User.objects.by_email(payload["email"]).get()
     assert user.role == User.Role.ORGANIZATION
 
 
@@ -109,4 +109,4 @@ def test_user_signup_rejects_privileged_fields(api_client: APIClient):
     error = response.data["errors"][0]
     assert error["field"] == "is_superuser"
     assert error["detail"] == "This field may not be set during signup."
-    assert not User.objects.filter(email=payload["email"]).exists()
+    assert not User.objects.by_email(payload["email"]).exists()

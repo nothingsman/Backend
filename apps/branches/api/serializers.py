@@ -131,7 +131,7 @@ class BranchAdminInviteSerializer(serializers.Serializer):
     def validate(self, attrs):
         request = self.context.get("request")
         branch = attrs.get("branch")
-        existing_user = User.objects.filter(email=attrs["email"]).first()
+        existing_user = User.objects.by_email(attrs["email"]).first()
 
         if existing_user is not None:
             if (

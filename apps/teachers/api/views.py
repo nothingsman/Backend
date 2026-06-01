@@ -102,7 +102,7 @@ class TeacherViewSet(viewsets.ModelViewSet):
     """
     CRUD for Teacher profiles.
 
-    Search: ?search=<name|employee_id|specialization>
+    Search: ?search=<employee_id|specialization>
     Filter: ?organization=<id>, ?branch=<id>, ?user=<id>
 
     Custom actions:
@@ -113,8 +113,6 @@ class TeacherViewSet(viewsets.ModelViewSet):
     lookup_field = "id"
     filter_backends = [SearchFilter]
     search_fields = [
-        "user__name",
-        "user__email",
         "employee_id",
         "specialization",
     ]
@@ -342,12 +340,12 @@ class TeacherQualificationViewSet(viewsets.ModelViewSet):
     CRUD for TeacherQualification.
 
     Filter: ?teacher=<id>, ?organization=<id>
-    Search: ?search=<degree_name|institution|field_of_study>
+    Search: ?search=<degree_name>
     """
 
     lookup_field = "id"
     filter_backends = [SearchFilter]
-    search_fields = ["degree_name", "institution", "field_of_study"]
+    search_fields = ["degree_name"]
 
     def get_queryset(self):
         qs = TeacherQualification.objects.select_related(
@@ -381,7 +379,7 @@ class TeacherSubjectAssignmentViewSet(viewsets.ModelViewSet):
     CRUD for TeacherSubjectAssignment (the junction table).
 
     Filter: ?teacher, ?subject, ?section, ?academic_year, ?organization
-    Search: ?search=<teacher_name|subject|section>
+    Search: ?search=<teacher_employee_id|subject|section>
 
     Custom actions:
       GET /teacher-assignments/by-section/?section=<id>
@@ -393,7 +391,6 @@ class TeacherSubjectAssignmentViewSet(viewsets.ModelViewSet):
     lookup_field = "id"
     filter_backends = [SearchFilter]
     search_fields = [
-        "teacher__user__name",
         "teacher__employee_id",
         "subject__name",
         "section__name",
@@ -500,9 +497,7 @@ class HomeroomAssignmentViewSet(viewsets.ModelViewSet):
       ?teacher=<id>
 
     Text search (?search=):
-      - Teacher name
       - Teacher employee ID
-      - Teacher email
       - Section name
       - Grade name
       - Academic year name
@@ -519,8 +514,6 @@ class HomeroomAssignmentViewSet(viewsets.ModelViewSet):
     lookup_field = "id"
     filter_backends = [SearchFilter]
     search_fields = [
-        "teacher__user__name",
-        "teacher__user__email",
         "teacher__employee_id",
         "section__name",
         "section__grade__name",

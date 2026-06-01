@@ -90,7 +90,7 @@ class Attendance(UUIDModel, TimeStampedModel):
         verbose_name = _("Attendance")
         verbose_name_plural = _("Attendance Records")
         unique_together = ("student", "date", "section")
-        ordering = ["-date", "section__name", "student__last_name"]
+        ordering = ["-date", "section__name", "student__roll_no"]
         indexes = [
             models.Index(fields=["organization", "branch", "date"]),
             models.Index(fields=["student", "academic_year"]),

@@ -35,7 +35,6 @@ class AssessmentAdmin(admin.ModelAdmin):
         "title",
         "teacher_assignment__section__name",
         "teacher_assignment__subject__name",
-        "teacher_assignment__teacher__user__name",
     )
     inlines = [AssessmentResultInline]
     readonly_fields = ("created_at", "updated_at")
@@ -65,12 +64,7 @@ class AssessmentResultAdmin(admin.ModelAdmin):
         "graded_by",
     )
     list_filter = ("submission_status", "parent_confirmed", "organization")
-    search_fields = (
-        "student__first_name",
-        "student__last_name",
-        "student__roll_no",
-        "assessment__title",
-    )
+    search_fields = ("student__roll_no", "assessment__title")
     readonly_fields = (
         "parent_confirmed_by",
         "parent_confirmed_at",
@@ -102,10 +96,5 @@ class HomeworkConfirmationAdmin(admin.ModelAdmin):
         "confirmed_at",
     )
     list_filter = ("is_confirmed", "organization", "branch", "section")
-    search_fields = (
-        "student__first_name",
-        "student__last_name",
-        "student__roll_no",
-        "assessment__title",
-    )
+    search_fields = ("student__roll_no", "assessment__title")
     readonly_fields = ("created_at", "updated_at", "confirmed_at")

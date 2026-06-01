@@ -107,7 +107,7 @@ class TestStudentAndParentBulkImport:
             )
         assert response.status_code == status.HTTP_202_ACCEPTED
 
-        parent_user = User.objects.get(email="parent1@example.com")
+        parent_user = User.objects.by_email("parent1@example.com").get()
         assert parent_user.role == User.Role.PARENT
         assert parent_user.name == "Parent One"
         assert parent_user.father_name == "FParent One"
@@ -227,7 +227,7 @@ class TestStudentAndParentBulkImport:
         assert response.status_code == status.HTTP_202_ACCEPTED
 
         assert Parent.objects.count() == 0
-        assert User.objects.filter(email="conflict@example.com").exists() is False
+        assert User.objects.by_email("conflict@example.com").exists() is False
 
         job = ImportJob.objects.last()
         assert job.module == "parents"
@@ -302,18 +302,18 @@ class TestStudentAndParentBulkImport:
         assert alice.last_name == "Green"
         assert alice.gender == "FEMALE"
         assert str(alice.date_of_birth) == "2015-05-20"
-        assert alice.admission_date == date(2023, 9, 1)
+        assert str(alice.admission_date) == "2023-09-01"
         assert StudentAcademicYearSection.objects.filter(
             student=alice,
             academic_year=section.academic_year,
             section=section,
         ).exists()
 
-        bob = Student.objects.get(first_name="Bob", current_section=None)
+        bob = Student.objects.exclude(roll_no="R501").get(current_section=None)
         assert bob.last_name == "Brown"
         assert bob.gender == "MALE"
         assert str(bob.date_of_birth) == "2016-06-18"
-        assert bob.admission_date == timezone.now().date()
+        assert str(bob.admission_date) == str(timezone.now().date())
         assert bob.roll_no.startswith("STU-")
         assert StudentAcademicYearSection.objects.filter(
             student=bob,

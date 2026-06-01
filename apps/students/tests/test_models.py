@@ -5,6 +5,7 @@ from academics.tests.factories import SectionFactory
 from branches.tests.factories import BranchFactory
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.db import connection
 from organizations.tests.factories import OrganizationFactory
 from students.models import ParentStudentLink
 from students.models import StudentAcademicYearSection
@@ -183,3 +184,25 @@ def test_student_academic_year_section_is_unique_per_student_and_year():
             student=student,
             academic_year=academic_year,
         )
+
+
+@pytest.mark.django_db
+def test_student_pii_is_encrypted_at_rest():
+    student = StudentFactory(
+        first_name="Kidus",
+        last_name="Alemu",
+    )
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT first_name, last_name
+            FROM students_student
+            WHERE id = %s
+            """,
+            [str(student.pk)],
+        )
+        encrypted_first_name, encrypted_last_name = cursor.fetchone()
+
+    assert encrypted_first_name != "Kidus"
+    assert encrypted_last_name != "Alemu"

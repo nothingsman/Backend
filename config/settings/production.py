@@ -10,6 +10,11 @@ from .base import env
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#secret-key
 SECRET_KEY = env("DJANGO_SECRET_KEY")
+PII_ENCRYPTION_ACTIVE_KEY = env("PII_ENCRYPTION_ACTIVE_KEY")
+PII_ENCRYPTION_KEYS = {
+    **PII_ENCRYPTION_LEGACY_KEYS,  # noqa: F405
+    PII_ENCRYPTION_ACTIVE_KEY_VERSION: PII_ENCRYPTION_ACTIVE_KEY,  # noqa: F405
+}
 # https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["api.kelem.app"])
 

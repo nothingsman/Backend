@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+from accounts.forms import UserAdminChangeForm
 from accounts.forms import UserAdminCreationForm
+from accounts.tests.factories import UserFactory
 from django.utils.translation import gettext_lazy as _
 
 if TYPE_CHECKING:
@@ -38,3 +41,20 @@ class TestUserAdminCreationForm:
         assert len(form.errors) == 1
         assert "email" in form.errors
         assert form.errors["email"][0] == _("This email has already been taken.")
+
+
+@pytest.mark.django_db
+def test_user_admin_change_form_rejects_duplicate_email() -> None:
+    existing_user = UserFactory(email="existing@example.com")
+    edited_user = UserFactory(email="edited@example.com")
+
+    form = UserAdminChangeForm(
+        data={
+            "email": existing_user.email,
+            "password": edited_user.password,
+        },
+        instance=edited_user,
+    )
+
+    assert not form.is_valid()
+    assert form.errors["email"][0] == _("This email has already been taken.")

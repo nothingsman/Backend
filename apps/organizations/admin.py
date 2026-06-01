@@ -47,12 +47,7 @@ class OrganizationAdmin(admin.ModelAdmin):
     search_fields = (
         "name",
         "trade_name",
-        "tin_number",
-        "license_no",
-        "client_full_name",
         "verified_name",
-        "verified_license_no",
-        "verified_tin_number",
     )
     list_filter = (
         "status",

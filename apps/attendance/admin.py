@@ -30,11 +30,8 @@ class AttendanceAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "date", "academic_year", "branch", "organization")
     search_fields = (
-        "student__first_name",
-        "student__last_name",
         "student__roll_no",
         "section__name",
-        "recorded_by__name",
     )
     inlines = [AttendanceReasonInline]
     date_hierarchy = "date"
@@ -57,11 +54,7 @@ class AttendanceReasonAdmin(admin.ModelAdmin):
         "confirmed_by",
     )
     list_filter = ("reason_category", "parent_confirmed", "organization")
-    search_fields = (
-        "attendance__student__first_name",
-        "attendance__student__last_name",
-        "note",
-    )
+    search_fields = ("attendance__student__roll_no", "note")
     readonly_fields = ("confirmed_by", "confirmed_at", "created_at", "updated_at")
 
     @admin.display(description="Student")
@@ -87,11 +80,7 @@ class AttendanceSummaryAdmin(admin.ModelAdmin):
         "last_updated",
     )
     list_filter = ("academic_year", "organization")
-    search_fields = (
-        "student__first_name",
-        "student__last_name",
-        "student__roll_no",
-    )
+    search_fields = ("student__roll_no",)
     readonly_fields = (
         "total_present",
         "total_absent",

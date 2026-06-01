@@ -3,6 +3,9 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from core.fields import EncryptedCharField
+from core.fields import EncryptedDateField
+from core.fields import EncryptedTextField
 from core.models import TimeStampedModel
 from core.models import UUIDModel
 
@@ -26,20 +29,20 @@ class Parent(UUIDModel, TimeStampedModel):
         verbose_name=_("Branches"),
         blank=True,
     )
-    secondary_phone_number = models.CharField(
+    secondary_phone_number = EncryptedCharField(
         _("Secondary Phone Number"),
         max_length=20,
         blank=True,
     )
-    occupation = models.CharField(_("Occupation"), max_length=255, blank=True)
-    work_address = models.CharField(_("Work Address"), max_length=255, blank=True)
-    relationship_notes = models.TextField(_("Relationship Notes"), blank=True)
-    emergency_contact_name = models.CharField(
+    occupation = EncryptedCharField(_("Occupation"), max_length=255, blank=True)
+    work_address = EncryptedCharField(_("Work Address"), max_length=255, blank=True)
+    relationship_notes = EncryptedTextField(_("Relationship Notes"), blank=True)
+    emergency_contact_name = EncryptedCharField(
         _("Emergency Contact Name"),
         max_length=255,
         blank=True,
     )
-    emergency_contact_phone = models.CharField(
+    emergency_contact_phone = EncryptedCharField(
         _("Emergency Contact Phone"),
         max_length=50,
         blank=True,
@@ -49,7 +52,7 @@ class Parent(UUIDModel, TimeStampedModel):
     class Meta:
         verbose_name = _("Parent")
         verbose_name_plural = _("Parents")
-        ordering = ["user__name", "user__email"]
+        ordering = ["-created_at"]
 
     def __str__(self):
         return self.user.name or self.user.email
@@ -101,10 +104,10 @@ class Student(UUIDModel, TimeStampedModel):
         related_name="students",
         verbose_name=_("Branch"),
     )
-    first_name = models.CharField(_("First Name"), max_length=255)
-    last_name = models.CharField(_("Last Name"), max_length=255)
+    first_name = EncryptedCharField(_("First Name"), max_length=255)
+    last_name = EncryptedCharField(_("Last Name"), max_length=255)
     gender = models.CharField(_("Gender"), max_length=10, choices=Gender.choices)
-    date_of_birth = models.DateField(_("Date of Birth"))
+    date_of_birth = EncryptedDateField(_("Date of Birth"))
     roll_no = models.CharField(_("Roll Number"), max_length=50, default="", blank=True)
     current_section = models.ForeignKey(
         "academics.Section",

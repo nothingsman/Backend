@@ -59,5 +59,5 @@ class UserAdmin(auth_admin.UserAdmin):
     )
     list_display = ["email", "name", "role", "phone_number", "is_superuser"]
     list_filter = ["role", "is_staff", "is_superuser", "is_active"]
-    search_fields = ["email", "name", "phone_number", "role"]
-    ordering = ["email"]
+    search_fields = ["role"]
+    ordering = ["date_joined"]

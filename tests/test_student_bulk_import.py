@@ -72,7 +72,7 @@ def test_student_bulk_import_creates_students() -> None:
     assert alice.gender == "FEMALE"
     assert str(alice.date_of_birth) == "2015-05-20"
     assert alice.current_section == section
-    assert alice.admission_date == timezone.now().date()
+    assert str(alice.admission_date) == str(timezone.now().date())
 
     bob = Student.objects.get(roll_no="STU-1002")
     assert bob.first_name == "Bob"
@@ -80,7 +80,7 @@ def test_student_bulk_import_creates_students() -> None:
     assert bob.gender == "MALE"
     assert str(bob.date_of_birth) == "2016-06-18"
     assert bob.current_section == section
-    assert bob.admission_date == timezone.now().date()
+    assert str(bob.admission_date) == str(timezone.now().date())
 
 
 def test_student_bulk_import_rejects_duplicate_roll_numbers_in_a_section() -> None:

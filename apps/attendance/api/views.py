@@ -66,7 +66,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
       ?status=PRESENT|ABSENT|LATE|EXCUSED
 
     Text search (?search=):
-      Student first/last name, roll number, section name
+      Student roll number, section name
 
     Custom actions:
       POST /attendance/bulk-submit/
@@ -89,8 +89,6 @@ class AttendanceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [SearchFilter]
     search_fields = [
-        "student__first_name",
-        "student__last_name",
         "student__roll_no",
         "section__name",
     ]
@@ -360,8 +358,7 @@ class AttendanceReasonViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [SearchFilter]
     search_fields = [
-        "attendance__student__first_name",
-        "attendance__student__last_name",
+        "attendance__student__roll_no",
         "reason_category",
     ]
 
@@ -496,8 +493,6 @@ class AttendanceSummaryViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AttendanceSummarySerializer
     filter_backends = [SearchFilter]
     search_fields = [
-        "student__first_name",
-        "student__last_name",
         "student__roll_no",
         "academic_year__name",
     ]

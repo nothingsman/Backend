@@ -1,6 +1,7 @@
 # ruff: noqa: ERA001, E501
 """Base settings to build other settings files upon."""
 
+import json
 import ssl
 import sys
 from pathlib import Path
@@ -288,6 +289,27 @@ FRONTEND_ROLE_DOMAINS = {
     "BRANCH_ADMIN": FRONTEND_BRANCH_ADMIN_DOMAIN,
     "TEACHER": FRONTEND_TEACHER_DOMAIN,
     "PARENT": FRONTEND_PARENT_DOMAIN,
+}
+
+# PII field encryption
+# ------------------------------------------------------------------------------
+PII_ENCRYPTION_ACTIVE_KEY_VERSION = env(
+    "PII_ENCRYPTION_ACTIVE_KEY_VERSION",
+    default="v1",
+)
+PII_ENCRYPTION_ACTIVE_KEY = env(
+    "PII_ENCRYPTION_ACTIVE_KEY",
+    default="",
+)
+PII_ENCRYPTION_LEGACY_KEYS = json.loads(
+    env(
+        "PII_ENCRYPTION_LEGACY_KEYS",
+        default="{}",
+    ),
+)
+PII_ENCRYPTION_KEYS = {
+    **PII_ENCRYPTION_LEGACY_KEYS,
+    PII_ENCRYPTION_ACTIVE_KEY_VERSION: PII_ENCRYPTION_ACTIVE_KEY,
 }
 SMS_BACKEND = env(
     "SMS_BACKEND",

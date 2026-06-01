@@ -9,6 +9,8 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from core.services.pii import build_lookup_hash
+
 
 class OrganizationViewSet(viewsets.ModelViewSet):
     queryset = Organization.objects.select_related("owner", "business_license_image")
@@ -20,15 +22,27 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         "verification_status",
         "name",
         "trade_name",
-        "tin_number",
-        "license_no",
     ]
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return self.queryset.none()
 
-        return self.queryset.filter(owner=self.request.user)
+        queryset = self.queryset.filter(owner=self.request.user)
+        params = getattr(self.request, "query_params", self.request.GET)
+        if params.get("tin_number"):
+            lookup_hash = build_lookup_hash(
+                params["tin_number"],
+                context="organizations.organization.tin_number",
+            )
+            queryset = queryset.filter(tin_number_lookup_hash=lookup_hash)
+        if params.get("license_no"):
+            lookup_hash = build_lookup_hash(
+                params["license_no"],
+                context="organizations.organization.license_no",
+            )
+            queryset = queryset.filter(license_no_lookup_hash=lookup_hash)
+        return queryset
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

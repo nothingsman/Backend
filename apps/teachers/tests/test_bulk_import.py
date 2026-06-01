@@ -1,5 +1,4 @@
 import io
-from datetime import date
 from unittest import mock
 from uuid import UUID
 
@@ -95,7 +94,7 @@ class TestTeacherBulkImport:
         assert response.status_code == status.HTTP_202_ACCEPTED
         assert response.data["detail"] == "Bulk import process started."
 
-        john = User.objects.get(email="johndoe@example.com")
+        john = User.objects.by_email("johndoe@example.com").get()
         assert john.role == User.Role.TEACHER
         assert john.name == "John Doe"
         assert john.father_name == "Richard Doe"
@@ -106,11 +105,11 @@ class TestTeacherBulkImport:
         assert teacher.organization == organization
         assert teacher.branch == branch
         assert teacher.employee_id == "EMP-1001"
-        assert teacher.joining_date == date(2024, 9, 1)
+        assert str(teacher.joining_date) == "2024-09-01"
         assert teacher.specialization == "Math"
         assert teacher.bio == "Math teacher bio"
 
-        jane = User.objects.get(email="janesmith@example.com")
+        jane = User.objects.by_email("janesmith@example.com").get()
         assert jane.role == User.Role.TEACHER
         jane_teacher = Teacher.objects.get(user=jane)
         assert jane_teacher.employee_id == "EMP-1002"
@@ -161,13 +160,13 @@ class TestTeacherBulkImport:
             )
         assert response.status_code == status.HTTP_202_ACCEPTED
 
-        robert = User.objects.get(email="robert@example.com")
+        robert = User.objects.by_email("robert@example.com").get()
         assert robert.role == User.Role.TEACHER
         teacher = Teacher.objects.get(user=robert)
         assert teacher.organization == organization
         assert teacher.branch == branch
         assert teacher.employee_id == "EMP-2001"
-        assert teacher.joining_date == date(2024, 9, 3)
+        assert str(teacher.joining_date) == "2024-09-03"
         assert teacher.specialization == "Biology"
         assert teacher.bio == "Biology teacher"
 
@@ -221,9 +220,11 @@ class TestTeacherBulkImport:
             )
         assert response.status_code == status.HTTP_202_ACCEPTED
 
-        teacher = Teacher.objects.get(user__email="generated@example.com")
+        teacher = Teacher.objects.get(
+            user=User.objects.by_email("generated@example.com").get(),
+        )
         assert teacher.employee_id == "EMP-12345678"
-        assert teacher.joining_date == timezone.now().date()
+        assert str(teacher.joining_date) == str(timezone.now().date())
         assert teacher.specialization == "Chemistry"
         assert teacher.bio == "Generated teacher bio"
         assert teacher.user.role == User.Role.TEACHER
@@ -278,7 +279,7 @@ class TestTeacherBulkImport:
         assert response.status_code == status.HTTP_202_ACCEPTED
 
         assert Teacher.objects.count() == 0
-        assert User.objects.filter(email="janesmith2@example.com").exists() is False
+        assert User.objects.by_email("janesmith2@example.com").exists() is False
 
         # Verify the import job failed
         job = ImportJob.objects.last()

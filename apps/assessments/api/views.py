@@ -19,8 +19,8 @@ from rest_framework.response import Response
 
 from core.api.access import scope_assessment_result_queryset_for_user
 from core.api.access import teacher_section_access_filter
-from core.api.access import user_can_access_branch
 from core.api.access import user_can_access_student_as_parent_or_staff
+from core.api.access import user_can_manage_branch
 from core.api.access import user_resource_access_filter
 
 from .serializers import AssessmentReadSerializer
@@ -63,7 +63,7 @@ class AssessmentViewSet(viewsets.ModelViewSet):
       ?status=DRAFT|PUBLISHED|CLOSED
 
     Text search (?search=):
-      Title, description, section name, subject name, teacher name.
+      Title, description, section name, subject name.
 
     Custom actions:
       GET  /assessments/by-section/?section=<id>
@@ -81,7 +81,6 @@ class AssessmentViewSet(viewsets.ModelViewSet):
         "description",
         "teacher_assignment__section__name",
         "teacher_assignment__subject__name",
-        "teacher_assignment__teacher__user__name",
     ]
 
     def get_queryset(self):
@@ -413,8 +412,6 @@ class AssessmentResultViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [SearchFilter]
     search_fields = [
-        "student__first_name",
-        "student__last_name",
         "student__roll_no",
         "assessment__title",
     ]
@@ -532,7 +529,7 @@ class AssessmentResultViewSet(viewsets.ModelViewSet):
         serializer.save(graded_by=self.request.user)
 
     def _enforce_teacher_result_access(self, assessment):
-        if user_can_access_branch(self.request.user, assessment.branch):
+        if user_can_manage_branch(self.request.user, assessment.branch):
             return
 
         if assessment.teacher_assignment.teacher.user_id == self.request.user.id:
