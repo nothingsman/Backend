@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from accounts.models import User
+from accounts.services import create_parent_invitation_verification_token
 from accounts.services import create_parent_login_otp
 from accounts.tests.factories import UserFactory
 from branches.tests.factories import BranchAdminFactory
@@ -16,6 +17,8 @@ from rest_framework.test import APIClient
 from rest_framework.test import APIRequestFactory
 from students.api.views import ParentCompleteInvitationView
 from students.api.views import ParentInviteView
+from students.api.views import ParentInvitationOtpRequestView
+from students.api.views import ParentInvitationOtpVerifyView
 from students.models import Parent
 
 
@@ -279,7 +282,7 @@ class TestParentCompleteInvitationView:
         Parent.objects.create(user=user, is_active=False)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        otp_code = create_parent_login_otp(user=user)
+        verification_token = create_parent_invitation_verification_token(user=user)
 
         view = ParentCompleteInvitationView.as_view()
         request = api_rf.post(
@@ -287,8 +290,7 @@ class TestParentCompleteInvitationView:
             {
                 "uid": uid,
                 "token": token,
-                "phone_number": user.phone_number,
-                "otp_code": otp_code,
+                "invitation_verification_token": verification_token,
                 "new_password": "new_secure_password_123",
             },
         )
@@ -304,7 +306,7 @@ class TestParentCompleteInvitationView:
 
     @patch("students.api.views.ParentInvitationEmail.send")
     @patch("students.api.views.send_parent_invitation_sms")
-    @patch("accounts.jwt_views.send_parent_otp_sms")
+    @patch("students.api.views.send_parent_otp_sms")
     def test_invited_parent_can_request_otp_complete_invitation_and_log_in(
         self,
         mock_send_otp_sms,
@@ -336,27 +338,40 @@ class TestParentCompleteInvitationView:
         assert invited_user.is_active is False
         assert invited_user.parent_profile.is_active is False
 
+        uid = urlsafe_base64_encode(force_bytes(invited_user.pk))
+        token = default_token_generator.make_token(invited_user)
+
         otp_response = api_client.post(
-            "/auth/otp/request/",
-            {"phone_number": invited_user.phone_number},
+            "/api/parents/request-invitation-otp/",
+            {"uid": uid, "token": token},
             format="json",
         )
 
         assert otp_response.status_code == status.HTTP_200_OK
         otp = invited_user.parent_login_otps.first()
         assert otp is not None
+        otp_code = mock_send_otp_sms.call_args.kwargs["otp_code"]
 
-        uid = urlsafe_base64_encode(force_bytes(invited_user.pk))
-        token = default_token_generator.make_token(invited_user)
-        otp_code = create_parent_login_otp(user=invited_user)
+        verify_response = api_client.post(
+            "/api/parents/verify-invitation-otp/",
+            {
+                "uid": uid,
+                "token": token,
+                "otp_code": otp_code,
+            },
+            format="json",
+        )
+
+        assert verify_response.status_code == status.HTTP_200_OK
 
         complete_response = api_client.post(
             "/api/parents/complete-invitation/",
             {
                 "uid": uid,
                 "token": token,
-                "phone_number": invited_user.phone_number,
-                "otp_code": otp_code,
+                "invitation_verification_token": verify_response.data[
+                    "invitation_verification_token"
+                ],
                 "new_password": "new_secure_password_123",
             },
             format="json",
@@ -391,7 +406,7 @@ class TestParentCompleteInvitationView:
         )
         Parent.objects.create(user=user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
-        otp_code = create_parent_login_otp(user=user)
+        verification_token = create_parent_invitation_verification_token(user=user)
 
         view = ParentCompleteInvitationView.as_view()
         request = api_rf.post(
@@ -399,8 +414,7 @@ class TestParentCompleteInvitationView:
             {
                 "uid": uid,
                 "token": "invalid-token",
-                "phone_number": user.phone_number,
-                "otp_code": otp_code,
+                "invitation_verification_token": verification_token,
                 "new_password": "new_secure_password_123",
             },
         )
@@ -410,7 +424,10 @@ class TestParentCompleteInvitationView:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.data["errors"][0]["field"] == "token"
 
-    def test_complete_rejects_phone_mismatch(self, api_client: APIClient):
+    def test_request_invitation_otp_rejects_invalid_token(
+        self,
+        api_client: APIClient,
+    ):
         user = UserFactory(
             role=User.Role.PARENT,
             is_active=False,
@@ -418,25 +435,20 @@ class TestParentCompleteInvitationView:
         )
         Parent.objects.create(user=user, is_active=False)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
-        token = default_token_generator.make_token(user)
-        otp_code = create_parent_login_otp(user=user)
 
         response = api_client.post(
-            "/api/parents/complete-invitation/",
+            "/api/parents/request-invitation-otp/",
             {
                 "uid": uid,
-                "token": token,
-                "phone_number": "+251911111299",
-                "otp_code": otp_code,
-                "new_password": "new_secure_password_123",
+                "token": "invalid-token",
             },
             format="json",
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert response.data["errors"][0]["field"] == "phone_number"
+        assert response.data["errors"][0]["field"] == "token"
 
-    def test_complete_rejects_invalid_otp(self, api_client: APIClient):
+    def test_verify_invitation_otp_rejects_invalid_otp(self, api_client: APIClient):
         user = UserFactory(
             role=User.Role.PARENT,
             is_active=False,
@@ -448,19 +460,70 @@ class TestParentCompleteInvitationView:
         create_parent_login_otp(user=user)
 
         response = api_client.post(
-            "/api/parents/complete-invitation/",
+            "/api/parents/verify-invitation-otp/",
             {
                 "uid": uid,
                 "token": token,
-                "phone_number": user.phone_number,
                 "otp_code": "000000",
-                "new_password": "new_secure_password_123",
             },
             format="json",
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.data["errors"][0]["field"] == "otp_code"
+
+    def test_complete_rejects_invalid_verification_token(
+        self,
+        api_client: APIClient,
+    ):
+        user = UserFactory(
+            role=User.Role.PARENT,
+            is_active=False,
+            phone_number="+251911111211",
+        )
+        Parent.objects.create(user=user, is_active=False)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+
+        response = api_client.post(
+            "/api/parents/complete-invitation/",
+            {
+                "uid": uid,
+                "token": token,
+                "invitation_verification_token": "invalid-token",
+                "new_password": "new_secure_password_123",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["errors"][0]["field"] == "invitation_verification_token"
+
+    def test_complete_rejects_missing_verification_token(
+        self,
+        api_client: APIClient,
+    ):
+        user = UserFactory(
+            role=User.Role.PARENT,
+            is_active=False,
+            phone_number="+251911111213",
+        )
+        Parent.objects.create(user=user, is_active=False)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+
+        response = api_client.post(
+            "/api/parents/complete-invitation/",
+            {
+                "uid": uid,
+                "token": token,
+                "new_password": "new_secure_password_123",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["errors"][0]["field"] == "invitation_verification_token"
 
     def test_complete_rejects_weak_password(self, api_client: APIClient):
         user = UserFactory(
@@ -471,15 +534,14 @@ class TestParentCompleteInvitationView:
         Parent.objects.create(user=user, is_active=False)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        otp_code = create_parent_login_otp(user=user)
+        verification_token = create_parent_invitation_verification_token(user=user)
 
         response = api_client.post(
             "/api/parents/complete-invitation/",
             {
                 "uid": uid,
                 "token": token,
-                "phone_number": user.phone_number,
-                "otp_code": otp_code,
+                "invitation_verification_token": verification_token,
                 "new_password": "123",
             },
             format="json",
@@ -487,3 +549,93 @@ class TestParentCompleteInvitationView:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.data["errors"][0]["field"] == "new_password"
+
+    @patch("students.api.views.send_parent_otp_sms")
+    def test_request_invitation_otp_resend_invalidates_previous_code(
+        self,
+        mock_send_otp_sms,
+        api_client: APIClient,
+    ):
+        user = UserFactory(
+            role=User.Role.PARENT,
+            is_active=False,
+            phone_number="+251911111214",
+        )
+        Parent.objects.create(user=user, is_active=False)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+
+        first_response = api_client.post(
+            "/api/parents/request-invitation-otp/",
+            {"uid": uid, "token": token},
+            format="json",
+        )
+        assert first_response.status_code == status.HTTP_200_OK
+        first_code = mock_send_otp_sms.call_args.kwargs["otp_code"]
+
+        second_response = api_client.post(
+            "/api/parents/request-invitation-otp/",
+            {"uid": uid, "token": token},
+            format="json",
+        )
+        assert second_response.status_code == status.HTTP_200_OK
+        second_code = mock_send_otp_sms.call_args.kwargs["otp_code"]
+        assert first_code != second_code
+
+        stale_verify = api_client.post(
+            "/api/parents/verify-invitation-otp/",
+            {
+                "uid": uid,
+                "token": token,
+                "otp_code": first_code,
+            },
+            format="json",
+        )
+        assert stale_verify.status_code == status.HTTP_400_BAD_REQUEST
+
+        fresh_verify = api_client.post(
+            "/api/parents/verify-invitation-otp/",
+            {
+                "uid": uid,
+                "token": token,
+                "otp_code": second_code,
+            },
+            format="json",
+        )
+        assert fresh_verify.status_code == status.HTTP_200_OK
+
+    @patch("students.api.views.send_parent_otp_sms")
+    def test_verify_invitation_otp_returns_verification_token(
+        self,
+        mock_send_otp_sms,
+        api_client: APIClient,
+    ):
+        user = UserFactory(
+            role=User.Role.PARENT,
+            is_active=False,
+            phone_number="+251911111215",
+        )
+        Parent.objects.create(user=user, is_active=False)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+
+        request_response = api_client.post(
+            "/api/parents/request-invitation-otp/",
+            {"uid": uid, "token": token},
+            format="json",
+        )
+        assert request_response.status_code == status.HTTP_200_OK
+
+        otp_code = mock_send_otp_sms.call_args.kwargs["otp_code"]
+        verify_response = api_client.post(
+            "/api/parents/verify-invitation-otp/",
+            {
+                "uid": uid,
+                "token": token,
+                "otp_code": otp_code,
+            },
+            format="json",
+        )
+
+        assert verify_response.status_code == status.HTTP_200_OK
+        assert verify_response.data["invitation_verification_token"]

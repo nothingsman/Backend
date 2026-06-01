@@ -2,10 +2,12 @@ from academics.models import AcademicYear
 from academics.models import Section
 from accounts.api.serializers import UserSerializer
 from accounts.models import User
+from accounts.services import consume_parent_invitation_verification_token
 from accounts.services import normalize_phone_number
 from branches.models import Branch
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
+from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils.encoding import force_str
@@ -720,18 +722,9 @@ class ParentInviteSerializer(serializers.Serializer):
         return attrs
 
 
-class ParentCompleteInvitationSerializer(serializers.Serializer):
+class ParentInvitationTokenSerializer(serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
-    phone_number = serializers.CharField(max_length=20)
-    otp_code = serializers.RegexField(r"^\d{6}$")
-    new_password = serializers.CharField(trim_whitespace=False)
-
-    def validate_phone_number(self, value: str) -> str:
-        try:
-            return normalize_phone_number(value)
-        except ValueError as err:
-            raise ValidationError(str(err)) from err
 
     def validate_uid(self, value: str) -> str:
         try:
@@ -765,17 +758,53 @@ class ParentCompleteInvitationSerializer(serializers.Serializer):
         if parent_profile.is_active:
             raise ValidationError({"uid": "Invalid or expired invitation."})
 
-        if attrs["phone_number"] != (user.phone_number or ""):
-            raise ValidationError(
-                {"phone_number": "Phone number does not match this invitation."},
+        self.context["target_parent_profile"] = parent_profile
+        return attrs
+
+
+class ParentInvitationOtpRequestSerializer(ParentInvitationTokenSerializer):
+    pass
+
+
+class ParentInvitationOtpVerifySerializer(ParentInvitationTokenSerializer):
+    otp_code = serializers.RegexField(r"^\d{6}$")
+
+
+class ParentCompleteInvitationSerializer(ParentInvitationTokenSerializer):
+    invitation_verification_token = serializers.CharField()
+    new_password = serializers.CharField(trim_whitespace=False)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        user = self.context["target_user"]
+
+        try:
+            consume_parent_invitation_verification_token(
+                user=user,
+                raw_token=attrs["invitation_verification_token"],
             )
+        except signing.SignatureExpired as err:
+            raise ValidationError(
+                {
+                    "invitation_verification_token": (
+                        "Invitation verification expired. Request a new OTP."
+                    ),
+                },
+            ) from err
+        except signing.BadSignature as err:
+            raise ValidationError(
+                {
+                    "invitation_verification_token": (
+                        "Invalid invitation verification token."
+                    ),
+                },
+            ) from err
 
         try:
             validate_password(attrs["new_password"], user=user)
         except DjangoValidationError as err:
             raise ValidationError({"new_password": list(err.messages)}) from err
 
-        self.context["target_parent_profile"] = parent_profile
         return attrs
 
 

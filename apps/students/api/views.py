@@ -2,8 +2,11 @@ import secrets
 
 from accounts.email import ParentInvitationEmail
 from accounts.models import User
+from accounts.services import create_parent_invitation_verification_token
+from accounts.services import create_parent_login_otp
 from accounts.services import consume_parent_login_otp
 from accounts.services import create_invitation_link
+from accounts.sms import send_parent_otp_sms
 from accounts.sms import send_parent_invitation_sms
 from branches.models import Branch
 from django.db import transaction
@@ -38,6 +41,8 @@ from core.tasks import process_bulk_import
 from .serializers import BulkImportSerializer
 from .serializers import ParentCompleteInvitationSerializer
 from .serializers import ParentInviteSerializer
+from .serializers import ParentInvitationOtpRequestSerializer
+from .serializers import ParentInvitationOtpVerifySerializer
 from .serializers import ParentReadSerializer
 from .serializers import ParentSerializer
 from .serializers import ParentStudentLinkReadSerializer
@@ -917,6 +922,53 @@ class ParentInviteView(APIView):
             )
 
 
+@extend_schema(request=ParentInvitationOtpRequestSerializer)
+class ParentInvitationOtpRequestView(APIView):
+    permission_classes = []
+
+    def post(self, request):
+        serializer = ParentInvitationOtpRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.context["target_user"]
+
+        with transaction.atomic():
+            otp_code = create_parent_login_otp(user=user)
+            send_parent_otp_sms(
+                phone_number=user.phone_number or "",
+                otp_code=otp_code,
+            )
+
+        return Response(
+            {"message": "OTP sent successfully."},
+            status=status.HTTP_200_OK,
+        )
+
+
+@extend_schema(request=ParentInvitationOtpVerifySerializer)
+class ParentInvitationOtpVerifyView(APIView):
+    permission_classes = []
+
+    def post(self, request):
+        serializer = ParentInvitationOtpVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.context["target_user"]
+        consume_parent_login_otp(
+            user=user,
+            raw_code=serializer.validated_data["otp_code"],
+        )
+        verification_token = create_parent_invitation_verification_token(user=user)
+
+        return Response(
+            {
+                "message": "OTP verified successfully.",
+                "invitation_verification_token": verification_token,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 @extend_schema(request=ParentCompleteInvitationSerializer)
 class ParentCompleteInvitationView(APIView):
     permission_classes = []
@@ -927,11 +979,6 @@ class ParentCompleteInvitationView(APIView):
 
         user = serializer.context["target_user"]
         parent_profile = serializer.context["target_parent_profile"]
-
-        consume_parent_login_otp(
-            user=user,
-            raw_code=serializer.validated_data["otp_code"],
-        )
 
         user.set_password(serializer.validated_data["new_password"])
         set_parent_activation_state(

@@ -11,6 +11,7 @@ from accounts.models import ParentLoginOTP
 from accounts.models import User
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
+from django.core import signing
 from django.db import transaction
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
@@ -25,6 +26,7 @@ APPROVAL_MAGIC_LINK_EXPIRY = timedelta(hours=24)
 APPROVAL_MAGIC_LINK_PATH = "organization-approval/{uid}/{token}"
 PHONE_NUMBER_MIN_DIGITS = 10
 PHONE_NUMBER_MAX_DIGITS = 15
+PARENT_INVITATION_VERIFICATION_SALT = "parent-invitation-verification"
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,6 @@ def normalize_phone_number(phone_number: str) -> str:
         message = "Phone number is required."
         raise ValueError(message)
 
-    has_plus = stripped.startswith("+")
     digits = "".join(character for character in stripped if character.isdigit())
     if not digits:
         message = "Phone number must contain digits."
@@ -62,7 +63,7 @@ def normalize_phone_number(phone_number: str) -> str:
         message = "Phone number must contain between 10 and 15 digits."
         raise ValueError(message)
 
-    return f"+{digits}" if has_plus else digits
+    return f"+{digits}"
 
 
 def get_frontend_domain_for_user(user: User | None) -> str:
@@ -115,6 +116,42 @@ def create_parent_login_otp(*, user: User) -> str:
         expires_at=now + timedelta(seconds=settings.PARENT_OTP_EXPIRY_SECONDS),
     )
     return raw_code
+
+
+def create_parent_invitation_verification_token(*, user: User) -> str:
+    payload = {
+        "user_id": str(user.pk),
+        "purpose": "parent-invitation-verification",
+    }
+    return signing.dumps(
+        payload,
+        salt=PARENT_INVITATION_VERIFICATION_SALT,
+    )
+
+
+def consume_parent_invitation_verification_token(
+    *,
+    user: User,
+    raw_token: str,
+) -> dict[str, str]:
+    max_age = getattr(
+        settings,
+        "PARENT_INVITATION_VERIFICATION_TOKEN_MAX_AGE_SECONDS",
+        15 * 60,
+    )
+    payload = signing.loads(
+        raw_token,
+        salt=PARENT_INVITATION_VERIFICATION_SALT,
+        max_age=max_age,
+    )
+
+    if (
+        payload.get("purpose") != "parent-invitation-verification"
+        or payload.get("user_id") != str(user.pk)
+    ):
+        raise signing.BadSignature("Invalid invitation verification token.")
+
+    return payload
 
 
 @transaction.atomic

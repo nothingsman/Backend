@@ -6,6 +6,7 @@ import pandas as pd
 from academics.models import AcademicYear
 from academics.models import Section
 from accounts.models import User
+from accounts.services import normalize_phone_number
 from branches.models import Branch
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -182,7 +183,7 @@ class ParentBulkImportService(_BulkImportServiceBase):
             row_errors["grandfather_name"] = ["Grandfather name is required."]
 
         self._validate_parent_email(email, row_errors, seen_emails)
-        self._validate_parent_phone(phone_number, row_errors, seen_phones)
+        phone_number = self._validate_parent_phone(phone_number, row_errors, seen_phones)
 
         existing_user = User.objects.filter(phone_number=phone_number).first()
         self._validate_existing_parent_user(existing_user, email, row_errors)
@@ -234,16 +235,25 @@ class ParentBulkImportService(_BulkImportServiceBase):
         phone_number: str,
         row_errors: dict[str, list[str]],
         seen_phones: set[str],
-    ) -> None:
+    ) -> str:
         if not phone_number:
             row_errors["phone_number"] = ["Phone number is required."]
-            return
+            return phone_number
 
-        if phone_number in seen_phones:
+        try:
+            normalized_phone_number = normalize_phone_number(phone_number)
+        except ValueError as err:
+            row_errors["phone_number"] = [
+                str(err),
+            ]
+            return phone_number
+
+        if normalized_phone_number in seen_phones:
             row_errors["phone_number"] = ["Duplicate phone number in the sheet."]
-            return
+            return normalized_phone_number
 
-        seen_phones.add(phone_number)
+        seen_phones.add(normalized_phone_number)
+        return normalized_phone_number
 
     def _validate_existing_parent_user(
         self,

@@ -110,3 +110,42 @@ def test_user_signup_rejects_privileged_fields(api_client: APIClient):
     assert error["field"] == "is_superuser"
     assert error["detail"] == "This field may not be set during signup."
     assert not User.objects.filter(email=payload["email"]).exists()
+
+
+@pytest.mark.django_db
+def test_user_signup_normalizes_phone_number(api_client: APIClient):
+    payload = {
+        "email": "normalized-signup@example.com",
+        "password": "strong-password-123",
+        "name": "Normalized User",
+        "phone_number": "251 911 111 111",
+    }
+
+    response = api_client.post("/auth/users/", payload, format="json")
+
+    assert response.status_code == HTTPStatus.CREATED
+
+    user = User.objects.get(email=payload["email"])
+    assert user.phone_number == "+251911111111"
+
+
+@pytest.mark.django_db
+def test_user_signup_rejects_equivalent_phone_number_duplicate(api_client: APIClient):
+    User.objects.create_user(
+        email="existing-phone@example.com",
+        password="strong-password-123",
+        phone_number="+251911111112",
+    )
+
+    payload = {
+        "email": "duplicate-phone@example.com",
+        "password": "strong-password-123",
+        "name": "Duplicate Phone",
+        "phone_number": "251911111112",
+    }
+
+    response = api_client.post("/auth/users/", payload, format="json")
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    error = response.data["errors"][0]
+    assert error["field"] == "phone_number"
