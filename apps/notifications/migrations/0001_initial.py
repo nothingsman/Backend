@@ -53,12 +53,12 @@ class Migration(migrations.Migration):
             options={
                 "ordering": ["-created_at"],
                 "indexes": [
-                    models.Index(fields=["recipient"], name="notificatio_recipie_72d53a_idx"),
-                    models.Index(fields=["read_at"], name="notificatio_read_at_a2cb75_idx"),
-                    models.Index(fields=["created_at"], name="notificatio_created_84f0d6_idx"),
+                    models.Index(fields=["recipient"], name="notificatio_recipie_be3f1a_idx"),
+                    models.Index(fields=["read_at"], name="notificatio_read_at_6329f9_idx"),
+                    models.Index(fields=["created_at"], name="notificatio_created_46ad24_idx"),
                     models.Index(
                         fields=["notifiable_type", "notifiable_id"],
-                        name="notificatio_notifia_8fd189_idx",
+                        name="notificatio_notifia_c4c036_idx",
                     ),
                 ],
             },
