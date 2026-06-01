@@ -79,37 +79,6 @@ class TestTeacherInviteView:
 
         assert mock_send_email.called
 
-    @patch("accounts.email.send_email_task.delay")
-    def test_invite_normalizes_phone_number(
-        self,
-        mock_send_email,
-        api_rf: APIRequestFactory,
-    ):
-        user = UserFactory()
-        branch = BranchFactory(school__organization__owner=user)
-
-        view = TeacherInviteView.as_view()
-        request = api_rf.post(
-            "/fake-url/",
-            {
-                "email": "normalizedteacher@example.com",
-                "name": "Normalized",
-                "father_name": "Teacher",
-                "grandfather_name": "Test",
-                "phone_number": "251 911 111 119",
-                "specialization": "Math",
-                "branch": branch.id,
-            },
-        )
-        request.user = user
-
-        response = view(request)
-
-        assert response.status_code == status.HTTP_201_CREATED
-        invited_user = User.objects.get(email="normalizedteacher@example.com")
-        assert invited_user.phone_number == "+251911111119"
-        assert mock_send_email.called
-
     def test_invite_not_owner_permission_denied(self, api_rf: APIRequestFactory):
         user = UserFactory()
         other_user = UserFactory()
@@ -300,34 +269,6 @@ class TestTeacherInviteView:
         assert teacher.organization == new_branch.organization
         assert teacher.specialization == "Physics"
         assert mock_send_email.called
-
-    def test_invite_rejects_equivalent_phone_number_duplicate(
-        self,
-        api_rf: APIRequestFactory,
-    ):
-        owner = UserFactory()
-        branch = BranchFactory(school__organization__owner=owner)
-        UserFactory(phone_number="+251911111120")
-
-        view = TeacherInviteView.as_view()
-        request = api_rf.post(
-            "/fake-url/",
-            {
-                "email": "duplicateformatteacher@example.com",
-                "name": "Duplicate",
-                "father_name": "Teacher",
-                "grandfather_name": "Format",
-                "phone_number": "251911111120",
-                "specialization": "Physics",
-                "branch": branch.id,
-            },
-        )
-        request.user = owner
-
-        response = view(request)
-
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert response.data["errors"][0]["field"] == "phone_number"
 
 
 @pytest.mark.django_db

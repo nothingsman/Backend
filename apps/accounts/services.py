@@ -55,6 +55,7 @@ def normalize_phone_number(phone_number: str) -> str:
         message = "Phone number is required."
         raise ValueError(message)
 
+    has_plus = stripped.startswith("+")
     digits = "".join(character for character in stripped if character.isdigit())
     if not digits:
         message = "Phone number must contain digits."
@@ -63,7 +64,7 @@ def normalize_phone_number(phone_number: str) -> str:
         message = "Phone number must contain between 10 and 15 digits."
         raise ValueError(message)
 
-    return f"+{digits}"
+    return f"+{digits}" if has_plus else digits
 
 
 def get_frontend_domain_for_user(user: User | None) -> str:
@@ -146,9 +147,10 @@ def consume_parent_invitation_verification_token(
     )
 
     if payload.get("purpose") != "parent-invitation-verification" or payload.get(
-        "user_id"
+        "user_id",
     ) != str(user.pk):
-        raise signing.BadSignature("Invalid invitation verification token.")
+        msg = "Invalid invitation verification token."
+        raise signing.BadSignature(msg)
 
     return payload
 

@@ -1,4 +1,3 @@
-from accounts.services import normalize_phone_number
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from teachers.models import HomeroomAssignment
@@ -356,10 +355,6 @@ class TeacherInviteSerializer(serializers.Serializer):
 
         request = self.context.get("request")
         branch = attrs.get("branch")
-        try:
-            attrs["phone_number"] = normalize_phone_number(attrs["phone_number"])
-        except ValueError as err:
-            raise ValidationError({"phone_number": str(err)}) from err
         existing_user = User.objects.filter(email=attrs["email"]).first()
 
         if existing_user is not None:

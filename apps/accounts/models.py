@@ -74,16 +74,6 @@ class User(UUIDModel, TimeStampedModel, AbstractUser):
 
     objects = UserManager()  # type: ignore[assignment]
 
-    def save(self, *args, **kwargs):
-        if self.phone_number == "":
-            self.phone_number = None
-        elif self.phone_number is not None:
-            from accounts.services import normalize_phone_number  # noqa: PLC0415
-
-            self.phone_number = normalize_phone_number(self.phone_number)
-
-        return super().save(*args, **kwargs)
-
     def get_absolute_url(self) -> str:
         """Get URL for user's detail view.
 

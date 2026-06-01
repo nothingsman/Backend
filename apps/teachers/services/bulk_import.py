@@ -4,7 +4,6 @@ from typing import Any
 
 import pandas as pd
 from accounts.models import User
-from accounts.services import normalize_phone_number
 from branches.models import Branch
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -126,7 +125,6 @@ class TeacherBulkImportService:
         prepared_rows: list[dict[str, Any]] = []
         seen_emails: set[str] = set()
         seen_employee_ids: set[str] = set()
-        seen_phone_numbers: set[str] = set()
 
         for index, row in dataframe.iterrows():
             row_number = index + 2
@@ -137,7 +135,6 @@ class TeacherBulkImportService:
                 seen_values={
                     "emails": seen_emails,
                     "employee_ids": seen_employee_ids,
-                    "phone_numbers": seen_phone_numbers,
                 },
                 row_errors=row_errors,
             )
@@ -184,11 +181,7 @@ class TeacherBulkImportService:
             row_errors,
             seen_values["employee_ids"],
         )
-        phone_number = self._validate_phone_number(
-            phone_number,
-            row_errors,
-            seen_values["phone_numbers"],
-        )
+        self._validate_phone_number(phone_number, row_errors)
 
         return {
             "name": name,
@@ -254,31 +247,15 @@ class TeacherBulkImportService:
         self,
         phone_number: str,
         row_errors: dict[str, list[str]],
-        seen_phone_numbers: set[str],
-    ) -> str:
+    ) -> None:
         if not phone_number:
             row_errors["phone_number"] = ["Phone number is required."]
-            return phone_number
+            return
 
-        try:
-            normalized_phone_number = normalize_phone_number(phone_number)
-        except ValueError as err:
-            row_errors["phone_number"] = [
-                str(err),
-            ]
-            return phone_number
-
-        if normalized_phone_number in seen_phone_numbers:
-            row_errors["phone_number"] = ["Duplicate phone number in the sheet."]
-            return normalized_phone_number
-
-        seen_phone_numbers.add(normalized_phone_number)
-
-        if User.objects.filter(phone_number=normalized_phone_number).exists():
+        if User.objects.filter(phone_number=phone_number).exists():
             row_errors["phone_number"] = [
                 "A user with this phone number already exists.",
             ]
-        return normalized_phone_number
 
     def _resolve_joining_date(
         self,
