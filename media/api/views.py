@@ -63,6 +63,12 @@ if TYPE_CHECKING:
 class MediaUploadViewSet(ApiEnvelopeMixin, GenericViewSet):
     permission_classes = [IsAuthenticated]
     queryset = MediaFile.objects.select_related("uploaded_by")
+    owner_scoped_actions = {
+        "get_multipart_part_url",
+        "complete_multipart_upload",
+        "abort_multipart_upload",
+        "destroy",
+    }
 
     def _get_storage_client(self) -> S3StorageClient:
         return S3StorageClient()
@@ -71,7 +77,10 @@ class MediaUploadViewSet(ApiEnvelopeMixin, GenericViewSet):
         if getattr(self, "swagger_fake_view", False):
             return self.queryset.none()
 
-        return self.queryset.filter(uploaded_by=self.request.user)
+        if self.action in self.owner_scoped_actions:
+            return self.queryset.filter(uploaded_by=self.request.user)
+
+        return self.queryset
 
     def get_serializer_class(self):
         if self.action == "upload":

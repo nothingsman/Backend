@@ -192,6 +192,21 @@ class TestMultipartCompletion:
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_complete_is_self_scoped(self, authenticated_client):
+        other_user = UserFactory()
+        media = MediaFileFactory(uploaded_by=other_user, status=StatusChoices.PENDING)
+
+        response = authenticated_client.post(
+            f"/api/media/{media.id}/multipart/complete",
+            {
+                "upload_id": "upload-123",
+                "parts": [{"part_number": 1, "etag": "etag-1"}],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
     def test_complete_verifies_object_exists(
         self,
         authenticated_client,
@@ -375,14 +390,16 @@ class TestMediaRetrieval:
     def test_retrieve_not_found_for_other_users(
         self,
         authenticated_client,
-        authenticated_user,
     ):
         other_user = UserFactory()
         media = MediaFileFactory(uploaded_by=other_user)
 
         response = authenticated_client.get(f"/api/media/{media.id}")
 
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()["data"]
+        assert str(data["id"]) == str(media.id)
+        assert str(data["uploaded_by"]) == str(other_user.id)
 
     def test_retrieve_includes_download_url_when_uploaded(
         self,
@@ -411,6 +428,29 @@ class TestDownloadUrl:
         media = MediaFileFactory()
         response = api_client.get(f"/api/media/{media.id}/url")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_download_url_is_available_to_other_authenticated_users(
+        self,
+        authenticated_client,
+    ):
+        other_user = UserFactory()
+        media = MediaFileFactory(
+            uploaded_by=other_user,
+            status=StatusChoices.UPLOADED,
+        )
+
+        with mock.patch(
+            "media.api.views.S3StorageClient.get_download_url",
+        ) as mock_download:
+            mock_download.return_value = "https://s3.example.com/download-url"
+
+            response = authenticated_client.get(f"/api/media/{media.id}/url")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert (
+            response.json()["data"]["download_url"]
+            == "https://s3.example.com/download-url"
+        )
 
     def test_download_url_requires_uploaded_status(
         self,
