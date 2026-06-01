@@ -1,10 +1,10 @@
 from datetime import date
 
 import pytest
-from academics.tests.factories import AcademicYearFactory
 from academics.tests.factories import GradeFactory
 from academics.tests.factories import SectionFactory
 from academics.tests.factories import SubjectFactory
+from academics.utils import get_or_create_academic_year_for_branch
 from announcements.models import Announcement
 from announcements.models import AnnouncementSection
 from announcements.tests.factories import AnnouncementFactory
@@ -27,11 +27,7 @@ def _build_section_context():
     parent = ParentFactory()
     organization = parent.organizations.first()
     branch = parent.branches.first()
-    academic_year = AcademicYearFactory(
-        organization=organization,
-        branch=branch,
-        is_current=True,
-    )
+    academic_year, _ = get_or_create_academic_year_for_branch(branch)
     grade = GradeFactory(
         organization=organization,
         branch=branch,
@@ -86,10 +82,10 @@ def test_announcement_signal_creates_notifications_for_expected_recipients(
             status=Announcement.StatusChoices.SENT,
             target_roles=Announcement.TargetRoleChoices.BOTH,
         )
-    AnnouncementSection.objects.create(
-        announcement=announcement,
-        section=context["section"],
-    )
+        AnnouncementSection.objects.create(
+            announcement=announcement,
+            section=context["section"],
+        )
 
     recipient_ids = set(
         Notification.objects.filter(notifiable_id=str(announcement.id)).values_list(
