@@ -1,3 +1,5 @@
+from importlib import import_module
+
 from django.apps import AppConfig
 
 
@@ -6,4 +8,4 @@ class AnnouncementsConfig(AppConfig):
     name = "announcements"
 
     def ready(self):
-        pass
+        import_module("announcements.signals")

@@ -21,6 +21,7 @@ from django.conf import settings
 from django.urls import include
 from django.urls import path
 from messaging.api.urls import urlpatterns as messaging_urlpatterns
+from notifications.api.views import NotificationViewSet
 from organizations.api.views import OrganizationViewSet
 from rest_framework.routers import DefaultRouter
 from rest_framework.routers import SimpleRouter
@@ -101,6 +102,7 @@ router.register(
     basename="homework-confirmation",
 )
 router.register("announcements", AnnouncementViewSet, basename="announcement")
+router.register("notifications", NotificationViewSet, basename="notification")
 
 app_name = "api"
 urlpatterns = [

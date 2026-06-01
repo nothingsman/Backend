@@ -3,18 +3,13 @@ from attendance.models import AttendanceSummary
 from celery import shared_task
 from django.db import DatabaseError
 from django.utils import timezone
+from notifications.producers import create_attendance_status_notifications
 
 
 @shared_task(bind=True, max_retries=3)
 def notify_parent_of_absence(self, attendance_id: str):
     """
-    Placeholder Celery task - triggered after an Attendance record is
-    saved with status ABSENT or LATE.
-
-    Replace the body with your actual notification logic:
-      - Push notification via FCM/APNs
-      - SMS via Twilio / Africa's Talking
-      - In-app notification stored to a Notification model
+    Creates in-app parent notifications for ABSENT/LATE attendance records.
     """
     try:
         record = (
@@ -22,6 +17,8 @@ def notify_parent_of_absence(self, attendance_id: str):
             .prefetch_related("student__parent_links__parent__user")
             .get(id=attendance_id)
         )
+
+        create_attendance_status_notifications(record)
 
         return {
             "status": "queued",
