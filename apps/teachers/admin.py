@@ -19,7 +19,7 @@ class TeacherAdmin(admin.ModelAdmin):
         "organization",
         "joining_date",
     )
-    search_fields = ("employee_id", "user__name", "user__email", "specialization")
+    search_fields = ("employee_id", "specialization")
     list_filter = ("branch", "organization", "joining_date")
     inlines = [TeacherQualificationInline]
 
@@ -31,7 +31,7 @@ class TeacherAdmin(admin.ModelAdmin):
 @admin.register(TeacherQualification)
 class TeacherQualificationAdmin(admin.ModelAdmin):
     list_display = ("teacher", "degree_name", "institution", "completion_date")
-    search_fields = ("teacher__employee_id", "degree_name", "institution")
+    search_fields = ("teacher__employee_id", "degree_name")
     list_filter = ("degree_name", "organization")
 
 
@@ -54,8 +54,6 @@ class HomeroomAssignmentAdmin(admin.ModelAdmin):
         "organization",
     )
     search_fields = (
-        "teacher__user__name",
-        "teacher__user__email",
         "teacher__employee_id",
         "section__name",
         "section__grade__name",

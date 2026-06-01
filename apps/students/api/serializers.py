@@ -3,7 +3,6 @@ from academics.models import Section
 from accounts.api.serializers import UserSerializer
 from accounts.models import User
 from accounts.services import consume_parent_invitation_verification_token
-from accounts.services import normalize_phone_number
 from branches.models import Branch
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
@@ -20,6 +19,7 @@ from students.models import Student
 from students.models import StudentAcademicYearSection
 
 from core.api.access import user_can_access_branch
+from core.services.pii import normalize_phone_number
 from media.api.serializers import MediaFileReferenceField
 
 # Base field list derived from the Student model — kept explicit so
@@ -674,7 +674,7 @@ class ParentInviteSerializer(serializers.Serializer):
             raise ValidationError({field_name: str(err)}) from err
 
     def _validate_existing_user(self, attrs: dict) -> User | None:
-        existing_user = User.objects.filter(phone_number=attrs["phone_number"]).first()
+        existing_user = User.objects.by_phone_number(attrs["phone_number"]).first()
         if existing_user is None:
             return None
 
@@ -689,7 +689,7 @@ class ParentInviteSerializer(serializers.Serializer):
     def _validate_email_conflict(email: str, existing_user: User | None) -> None:
         if not email:
             return
-        email_conflict = User.objects.filter(email__iexact=email)
+        email_conflict = User.objects.by_email(email)
         if existing_user is not None:
             email_conflict = email_conflict.exclude(pk=existing_user.pk)
         if email_conflict.exists():

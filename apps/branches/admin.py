@@ -13,5 +13,5 @@ class BranchAdminModel(admin.ModelAdmin):
 @admin.register(BranchAdmin)
 class BranchAdminUserModel(admin.ModelAdmin):
     list_display = ("user", "branch", "role_title", "status")
-    search_fields = ("user__email", "user__name", "role_title")
+    search_fields = ("role_title",)
     list_filter = ("status", "last_login")

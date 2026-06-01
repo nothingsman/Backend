@@ -67,7 +67,7 @@ class TestParentInviteView:
         assert "/complete-parent-invitation/" in response.data["invitation_url"]
         assert response.data["sms_sent"] is True
 
-        parent_user = User.objects.get(phone_number="+251911111201")
+        parent_user = User.objects.by_phone_number("+251911111201").get()
         assert parent_user.role == User.Role.PARENT
         assert parent_user.is_active is False
 
@@ -126,7 +126,7 @@ class TestParentInviteView:
         assert response.data["sms_sent"] is True
         user.refresh_from_db()
         parent.refresh_from_db()
-        assert User.objects.filter(phone_number="+251911111202").count() == 1
+        assert User.objects.by_phone_number("+251911111202").count() == 1
         assert user.name == "Updated"
         assert user.is_active is False
         assert parent.occupation == "Engineer"
@@ -227,7 +227,7 @@ class TestParentInviteView:
         assert response.data["sms_sent"] is False
         assert response.data["sms_error"] == "boom"
         assert mock_send_sms.called
-        assert User.objects.filter(phone_number="+251911111205").exists()
+        assert User.objects.by_phone_number("+251911111205").exists()
 
     def test_invite_allows_active_branch_admin_for_own_branch(
         self,
@@ -332,7 +332,7 @@ class TestParentCompleteInvitationView:
         invite_response = ParentInviteView.as_view()(invite_request)
 
         assert invite_response.status_code == status.HTTP_201_CREATED
-        invited_user = User.objects.get(phone_number="+251911111212")
+        invited_user = User.objects.by_phone_number("+251911111212").get()
         assert invited_user.is_active is False
         assert invited_user.parent_profile.is_active is False
 

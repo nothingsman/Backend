@@ -101,7 +101,7 @@ STUDENT_LIST_PARAMETERS = [
         location=OpenApiParameter.QUERY,
         description=(
             "Sort by field name. Prefix with '-' for descending. "
-            "Allowed: first_name, last_name, roll_no, created_at, "
+            "Allowed: roll_no, created_at, "
             "current_section__name, current_section__grade__name."
         ),
     ),
@@ -267,7 +267,7 @@ class StudentViewSet(viewsets.ModelViewSet):
       ?gender=MALE|FEMALE|OTHER
 
     Text search (?search=):
-      Student first name, last name, roll number, section name, grade name
+      Student roll number, section name, grade name
 
     Custom actions:
       GET /students/by-section/?section=<id>
@@ -280,21 +280,17 @@ class StudentViewSet(viewsets.ModelViewSet):
     lookup_field = "id"
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = [
-        "first_name",
-        "last_name",
         "roll_no",
         "current_section__name",
         "current_section__grade__name",
     ]
     ordering_fields = [
-        "first_name",
-        "last_name",
         "roll_no",
         "created_at",
         "current_section__name",
         "current_section__grade__name",
     ]
-    ordering = ["first_name", "last_name", "id"]
+    ordering = ["created_at", "id"]
 
     def _base_queryset(self):
         return Student.objects.select_related(
@@ -515,22 +511,10 @@ class ParentViewSet(viewsets.ModelViewSet):
 
     lookup_field = "id"
     permission_classes = [IsAuthenticated]
-    filter_backends = [SearchFilter]
-    search_fields = [
-        "user__name",
-        "user__email",
-        "user__phone_number",
-        "secondary_phone_number",
-        "occupation",
-        "work_address",
-    ]
+    filter_backends = []
 
     def get_queryset(self):
-        qs = Parent.objects.select_related("user").prefetch_related(
-            "organizations",
-            "branches",
-            "student_links__student",
-        )
+        qs = Parent.objects.all()
         if getattr(self, "swagger_fake_view", False):
             return qs.none()
 
@@ -543,11 +527,25 @@ class ParentViewSet(viewsets.ModelViewSet):
         if params.get("user"):
             qs = qs.filter(user_id=params["user"])
         if params.get("occupation"):
-            qs = qs.filter(occupation__iexact=params["occupation"])
+            normalized_occupation = params["occupation"].strip().casefold()
+            matching_ids = [
+                parent.id
+                for parent in qs.only("id", "occupation")
+                if parent.occupation.strip().casefold() == normalized_occupation
+            ]
+            qs = qs.filter(id__in=matching_ids)
         if params.get("is_active") is not None:
             is_active = params["is_active"].lower() in ("true", "1", "yes")
             qs = qs.filter(is_active=is_active)
-        return qs.distinct()
+        return (
+            qs.select_related("user")
+            .prefetch_related(
+                "organizations",
+                "branches",
+                "student_links__student",
+            )
+            .distinct()
+        )
 
     def get_serializer_class(self):
         if self.action == "bulk_import":

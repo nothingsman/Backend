@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from core.fields import EncryptedCharField
+from core.fields import EncryptedTextField
 from core.models import TimeStampedModel
 from core.models import UUIDModel
 
@@ -32,7 +34,7 @@ class Teacher(UUIDModel, TimeStampedModel):
         null=True,
         blank=True,
     )
-    bio = models.TextField(_("Bio"), blank=True)
+    bio = EncryptedTextField(_("Bio"), blank=True)
     specialization = models.CharField(
         _("Specialization"),
         max_length=255,
@@ -63,8 +65,8 @@ class TeacherQualification(UUIDModel, TimeStampedModel):
         verbose_name=_("Organization"),
     )
     degree_name = models.CharField(_("Degree Name"), max_length=255)
-    institution = models.CharField(_("Institution"), max_length=255)
-    field_of_study = models.CharField(_("Field of Study"), max_length=255)
+    institution = EncryptedCharField(_("Institution"), max_length=255)
+    field_of_study = EncryptedCharField(_("Field of Study"), max_length=255)
     completion_date = models.DateField(_("Completion Date"))
     certificate_copy = models.ForeignKey(
         "media.MediaFile",

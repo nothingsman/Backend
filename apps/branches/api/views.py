@@ -65,6 +65,7 @@ class BranchViewSet(viewsets.ModelViewSet):
             self.queryset,
             self.request.user,
             branch_lookup="self",
+            include_teacher_branches=True,
         )
 
         params = getattr(self.request, "query_params", self.request.GET)
@@ -84,6 +85,7 @@ class BranchViewSet(viewsets.ModelViewSet):
                 "branch_id": str(branch.id),
                 "branch_name": branch.name,
                 "school_id": str(branch.school_id),
+                "logo": str(branch.school.logo_id) if branch.school.logo_id else None,
                 "school_name": branch.school.name,
             },
         )

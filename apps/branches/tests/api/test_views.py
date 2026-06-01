@@ -9,6 +9,9 @@ from branches.tests.factories import BranchFactory
 from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework.test import APIRequestFactory
+from teachers.models import Teacher
+
+from media.tests.factories import MediaFileFactory
 
 
 @pytest.mark.django_db
@@ -69,6 +72,35 @@ class TestBranchViewSet:
         assert response.data == {
             "branch_id": str(branch.id),
             "branch_name": branch.name,
+            "logo": None,
+            "school_id": str(branch.school_id),
+            "school_name": branch.school.name,
+        }
+
+    def test_school_name_endpoint_allows_teacher_branch_access(
+        self,
+        api_client: APIClient,
+    ):
+        user = UserFactory()
+        branch = BranchFactory(school__organization__owner=UserFactory())
+        logo = MediaFileFactory(uploaded_by=user)
+        branch.school.logo = logo
+        branch.school.save(update_fields=["logo"])
+        Teacher.objects.create(
+            user=user,
+            organization=branch.organization,
+            branch=branch,
+            employee_id="EMP-1000",
+        )
+        api_client.force_authenticate(user=user)
+
+        response = api_client.get(f"/api/branches/{branch.id}/school-name/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {
+            "branch_id": str(branch.id),
+            "branch_name": branch.name,
+            "logo": str(logo.id),
             "school_id": str(branch.school_id),
             "school_name": branch.school.name,
         }

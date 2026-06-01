@@ -435,18 +435,18 @@ class TestStudentsAPI:
         )
 
         asc_response = api_client.get(
-            f"/api/students/?branch={branch.id}&organization={organization.id}&ordering=first_name",
+            f"/api/students/?branch={branch.id}&organization={organization.id}&ordering=roll_no",
         )
         assert asc_response.status_code == status.HTTP_200_OK
-        asc_names = [item["first_name"] for item in asc_response.data["results"]]
-        assert asc_names == sorted(asc_names)
+        asc_roll_nos = [item["roll_no"] for item in asc_response.data["results"]]
+        assert asc_roll_nos == sorted(asc_roll_nos)
 
         desc_response = api_client.get(
-            f"/api/students/?branch={branch.id}&organization={organization.id}&ordering=-first_name",
+            f"/api/students/?branch={branch.id}&organization={organization.id}&ordering=-roll_no",
         )
         assert desc_response.status_code == status.HTTP_200_OK
-        desc_names = [item["first_name"] for item in desc_response.data["results"]]
-        assert desc_names == sorted(desc_names, reverse=True)
+        desc_roll_nos = [item["roll_no"] for item in desc_response.data["results"]]
+        assert desc_roll_nos == sorted(desc_roll_nos, reverse=True)
 
     def test_student_list_supports_ordering_with_search_and_filters(
         self,
@@ -458,29 +458,27 @@ class TestStudentsAPI:
     ):
         api_client.force_authenticate(user=user)
         target_grade = section.grade
-        eden = StudentFactory(
+        match_one = StudentFactory(
             organization=organization,
             branch=branch,
             current_section=section,
             first_name="Eden",
-            last_name="Match",
             roll_no="MATCH-2",
         )
         StudentAcademicYearSectionFactory(
-            student=eden,
+            student=match_one,
             academic_year=section.academic_year,
             section=section,
         )
-        abel = StudentFactory(
+        match_two = StudentFactory(
             organization=organization,
             branch=branch,
             current_section=section,
             first_name="Abel",
-            last_name="Match",
             roll_no="MATCH-1",
         )
         StudentAcademicYearSectionFactory(
-            student=abel,
+            student=match_two,
             academic_year=section.academic_year,
             section=section,
         )
@@ -491,16 +489,15 @@ class TestStudentsAPI:
             grade=other_grade,
             academic_year=section.academic_year,
         )
-        zulu = StudentFactory(
+        off_grade_match = StudentFactory(
             organization=organization,
             branch=branch,
             current_section=other_section,
             first_name="Zulu",
-            last_name="Match",
             roll_no="MATCH-9",
         )
         StudentAcademicYearSectionFactory(
-            student=zulu,
+            student=off_grade_match,
             academic_year=section.academic_year,
             section=other_section,
         )
@@ -508,16 +505,16 @@ class TestStudentsAPI:
         response = api_client.get(
             f"/api/students/?branch={branch.id}&organization={organization.id}"
             f"&academic_year={section.academic_year_id}&grade={target_grade.id}"
-            "&search=match&ordering=first_name",
+            "&search=match&ordering=roll_no",
         )
         assert response.status_code == status.HTTP_200_OK
 
         results = response.data["results"]
         assert len(results) >= MIN_EXPECTED_MATCHED_STUDENTS
-        names = [item["first_name"] for item in results]
-        assert names == sorted(names)
+        roll_nos = [item["roll_no"] for item in results]
+        assert roll_nos == sorted(roll_nos)
         assert all(item["grade_id"] == str(target_grade.id) for item in results)
-        assert all("match" in item["last_name"].lower() for item in results)
+        assert all("match" in item["roll_no"].lower() for item in results)
 
     def test_student_list_ignores_invalid_ordering_field(
         self,
@@ -613,6 +610,10 @@ class TestStudentsAPI:
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.data["occupation"] == "Doctor"
+
+        response = api_client.get("/api/parents/?occupation=doctor")
+        assert response.status_code == status.HTTP_200_OK
+        assert any(item["id"] == parent_id for item in response.data["results"])
 
         response = api_client.get(f"/api/parents/by-branch/?branch={branch.id}")
         assert response.status_code == status.HTTP_200_OK

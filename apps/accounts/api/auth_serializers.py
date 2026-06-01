@@ -3,8 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from accounts.models import User
-from accounts.services import normalize_phone_number
-from django.contrib.auth import authenticate
 from django.contrib.auth.models import update_last_login
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
@@ -14,6 +12,8 @@ from rest_framework_simplejwt.authentication import default_user_authentication_
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.settings import api_settings
 from students.models import Parent
+
+from core.services.pii import normalize_phone_number
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -39,10 +39,13 @@ def authenticate_phone_or_email_credentials(
         except ValueError:
             return None
 
-        user = User.objects.filter(
-            phone_number=normalized_phone,
-            role=User.Role.PARENT,
-        ).first()
+        user = (
+            User.objects.by_phone_number(normalized_phone)
+            .filter(
+                role=User.Role.PARENT,
+            )
+            .first()
+        )
         if user is None or not user.check_password(password):
             return None
         return user
@@ -50,11 +53,10 @@ def authenticate_phone_or_email_credentials(
     if not normalized_email:
         return None
 
-    return authenticate(
-        request=request,
-        email=normalized_email,
-        password=password,
-    )
+    user = User.objects.by_email(normalized_email).first()
+    if user is None or not user.check_password(password):
+        return None
+    return user
 
 
 class ApprovalMagicLinkExchangeSerializer(serializers.Serializer):
@@ -95,10 +97,7 @@ class ParentOTPRequestSerializer(serializers.Serializer):
             raise serializers.ValidationError(str(err)) from err
 
         try:
-            user = User.objects.get(
-                phone_number=normalized,
-                role=User.Role.PARENT,
-            )
+            user = User.objects.by_phone_number(normalized).get(role=User.Role.PARENT)
         except User.DoesNotExist as err:
             raise serializers.ValidationError(
                 NO_ACTIVE_PARENT_ACCOUNT_MESSAGE,
