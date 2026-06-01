@@ -26,9 +26,9 @@ from rest_framework.routers import DefaultRouter
 from rest_framework.routers import SimpleRouter
 from schools.api.views import SchoolViewSet
 from students.api.views import ParentCompleteInvitationView
-from students.api.views import ParentInviteView
 from students.api.views import ParentInvitationOtpRequestView
 from students.api.views import ParentInvitationOtpVerifyView
+from students.api.views import ParentInviteView
 from students.api.views import ParentStudentLinkViewSet
 from students.api.views import ParentViewSet
 from students.api.views import StudentViewSet

@@ -71,7 +71,9 @@ class TestUserViewSet:
         assert response.data["role"] == User.Role.ORGANIZATION
 
     @pytest.mark.django_db
-    def test_partial_update_normalizes_phone_number(self, user: User, api_client: APIClient):
+    def test_partial_update_normalizes_phone_number(
+        self, user: User, api_client: APIClient
+    ):
         api_client.force_authenticate(user=user)
 
         response = api_client.patch(

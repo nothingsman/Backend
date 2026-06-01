@@ -1,3 +1,4 @@
+from accounts.services import normalize_phone_number
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from teachers.models import HomeroomAssignment
@@ -6,7 +7,6 @@ from teachers.models import TeacherQualification
 from teachers.models import TeacherSubjectAssignment
 
 from core.api.access import user_can_access_branch
-from accounts.services import normalize_phone_number
 from media.api.serializers import MediaFileReferenceField
 
 # ---------------------------------------------------------------------------

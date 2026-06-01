@@ -145,10 +145,9 @@ def consume_parent_invitation_verification_token(
         max_age=max_age,
     )
 
-    if (
-        payload.get("purpose") != "parent-invitation-verification"
-        or payload.get("user_id") != str(user.pk)
-    ):
+    if payload.get("purpose") != "parent-invitation-verification" or payload.get(
+        "user_id"
+    ) != str(user.pk):
         raise signing.BadSignature("Invalid invitation verification token.")
 
     return payload

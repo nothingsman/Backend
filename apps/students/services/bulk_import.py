@@ -183,7 +183,9 @@ class ParentBulkImportService(_BulkImportServiceBase):
             row_errors["grandfather_name"] = ["Grandfather name is required."]
 
         self._validate_parent_email(email, row_errors, seen_emails)
-        phone_number = self._validate_parent_phone(phone_number, row_errors, seen_phones)
+        phone_number = self._validate_parent_phone(
+            phone_number, row_errors, seen_phones
+        )
 
         existing_user = User.objects.filter(phone_number=phone_number).first()
         self._validate_existing_parent_user(existing_user, email, row_errors)

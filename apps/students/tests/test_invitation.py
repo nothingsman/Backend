@@ -17,8 +17,6 @@ from rest_framework.test import APIClient
 from rest_framework.test import APIRequestFactory
 from students.api.views import ParentCompleteInvitationView
 from students.api.views import ParentInviteView
-from students.api.views import ParentInvitationOtpRequestView
-from students.api.views import ParentInvitationOtpVerifyView
 from students.models import Parent
 
 
