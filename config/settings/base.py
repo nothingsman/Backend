@@ -106,6 +106,7 @@ LOCAL_APPS = [
     "core",
     "media",
     "messaging",
+    "notifications",
     # Your stuff: custom apps go here
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
