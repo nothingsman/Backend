@@ -1,11 +1,15 @@
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema
+from organizations.api.serializers import OrganizationAnalyticsSerializer
 from organizations.api.serializers import OrganizationSerializer
 from organizations.models import Organization
+from organizations.services.analytics import build_organization_analytics_payload
 from organizations.services.organization_creation import (
     create_organization_with_verification,
 )
 from rest_framework import status
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -58,3 +62,15 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
             headers=headers,
         )
+
+    @extend_schema(
+        summary="Get organization analytics dashboard data",
+        responses=OrganizationAnalyticsSerializer,
+    )
+    @action(detail=True, methods=["get"], url_path="analytics")
+    def analytics(self, request, *args, **kwargs):
+        del args, kwargs
+        organization = self.get_object()
+        payload = build_organization_analytics_payload(organization)
+        serializer = OrganizationAnalyticsSerializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)

@@ -4,9 +4,13 @@ from accounts.email import BranchAdminInvitationEmail
 from accounts.models import User
 from accounts.services import create_invitation_link
 from branches.api.serializers import BranchAdminSerializer
+from branches.api.serializers import BranchAnalyticsSerializer
 from branches.api.serializers import BranchSerializer
+from branches.api.serializers import BranchTopPerformanceRiskStudentSerializer
 from branches.models import Branch
 from branches.models import BranchAdmin
+from branches.services.analytics import build_branch_analytics_payload
+from branches.services.analytics import build_top_performance_risks_payload
 from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
 from django.utils import timezone
@@ -89,6 +93,38 @@ class BranchViewSet(viewsets.ModelViewSet):
                 "school_name": branch.school.name,
             },
         )
+
+    @extend_schema(
+        summary="Get branch analytics dashboard data",
+        responses=BranchAnalyticsSerializer,
+    )
+    @action(detail=True, methods=["get"], url_path="analytics")
+    def analytics(self, request, **kwargs):
+        del request, kwargs
+        branch = self.get_object()
+        payload = build_branch_analytics_payload(branch)
+        serializer = BranchAnalyticsSerializer(payload)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary="Get top branch students by performance risk",
+        responses=BranchTopPerformanceRiskStudentSerializer(many=True),
+    )
+    @action(detail=True, methods=["get"], url_path="top-performance-risks")
+    def top_performance_risks(self, request, **kwargs):
+        del kwargs
+        branch = self.get_object()
+        raw_limit = request.query_params.get("limit", "10")
+        try:
+            limit = int(raw_limit)
+        except ValueError as exc:
+            raise ValidationError({"limit": "Limit must be an integer."}) from exc
+        if limit < 1:
+            raise ValidationError({"limit": "Limit must be greater than 0."})
+
+        payload = build_top_performance_risks_payload(branch, limit=limit)
+        serializer = BranchTopPerformanceRiskStudentSerializer(payload, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class BranchAdminViewSet(viewsets.ModelViewSet):

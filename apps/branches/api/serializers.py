@@ -156,3 +156,83 @@ class BranchAdminCompleteInvitationSerializer(serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
     new_password = serializers.CharField(style={"input_type": "password"})
+
+
+class BranchAnalyticsTotalsSerializer(serializers.Serializer):
+    active_students = serializers.IntegerField()
+    active_teachers = serializers.IntegerField()
+    active_branch_admins = serializers.IntegerField()
+
+
+class BranchAcademicPerformanceAnnualPointSerializer(serializers.Serializer):
+    year = serializers.IntegerField()
+    average_percentage = serializers.FloatField()
+
+
+class BranchAcademicPerformanceQuarterlyPointSerializer(serializers.Serializer):
+    year = serializers.IntegerField()
+    quarter = serializers.IntegerField()
+    average_percentage = serializers.FloatField()
+
+
+class BranchAcademicPerformanceSerializer(serializers.Serializer):
+    annual = BranchAcademicPerformanceAnnualPointSerializer(many=True)
+    quarterly = BranchAcademicPerformanceQuarterlyPointSerializer(many=True)
+
+
+class BranchPerformanceRiskSerializer(serializers.Serializer):
+    at_risk_students = serializers.IntegerField()
+    percent = serializers.FloatField()
+
+
+class BranchAttendanceTrendWeeklyPointSerializer(serializers.Serializer):
+    year = serializers.IntegerField()
+    week = serializers.IntegerField()
+    attendance_rate = serializers.FloatField()
+
+
+class BranchAttendanceTrendMonthlyPointSerializer(serializers.Serializer):
+    year = serializers.IntegerField()
+    month = serializers.IntegerField()
+    attendance_rate = serializers.FloatField()
+
+
+class BranchAttendanceTrendAnnualPointSerializer(serializers.Serializer):
+    year = serializers.IntegerField()
+    attendance_rate = serializers.FloatField()
+
+
+class BranchAttendanceTrendSerializer(serializers.Serializer):
+    weekly = BranchAttendanceTrendWeeklyPointSerializer(many=True)
+    monthly = BranchAttendanceTrendMonthlyPointSerializer(many=True)
+    annual = BranchAttendanceTrendAnnualPointSerializer(many=True)
+
+
+class BranchGradePerformanceSerializer(serializers.Serializer):
+    grade_id = serializers.UUIDField()
+    grade_name = serializers.CharField()
+    student_count = serializers.IntegerField()
+    performance_score = serializers.FloatField()
+
+
+class BranchAnalyticsSerializer(serializers.Serializer):
+    branch_id = serializers.UUIDField()
+    totals = BranchAnalyticsTotalsSerializer()
+    attendance_rate = serializers.FloatField()
+    performance_risk = BranchPerformanceRiskSerializer()
+    teacher_count = serializers.IntegerField()
+    parent_linkage_percent = serializers.FloatField()
+    attendance_trend = BranchAttendanceTrendSerializer()
+    per_grade = BranchGradePerformanceSerializer(many=True)
+    academic_performance_index = BranchAcademicPerformanceSerializer()
+
+
+class BranchTopPerformanceRiskStudentSerializer(serializers.Serializer):
+    student_id = serializers.UUIDField()
+    student_name = serializers.CharField()
+    roll_no = serializers.CharField()
+    grade_id = serializers.UUIDField(allow_null=True)
+    grade_name = serializers.CharField(allow_null=True)
+    risk_count = serializers.IntegerField()
+    average_percentage = serializers.FloatField()
+    latest_risk_at = serializers.DateTimeField()
