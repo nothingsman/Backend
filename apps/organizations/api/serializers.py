@@ -65,3 +65,22 @@ class OrganizationSerializer(serializers.ModelSerializer):
 
     def get_requires_manual_verification(self, obj: Organization) -> bool:
         return obj.verification_status != Organization.VerificationStatus.VERIFIED
+
+
+class OrganizationAnalyticsPointSerializer(serializers.Serializer):
+    year = serializers.IntegerField()
+    count = serializers.IntegerField()
+
+
+class OrganizationAnalyticsTotalsSerializer(serializers.Serializer):
+    students = serializers.IntegerField()
+    branch_admins = serializers.IntegerField()
+    teachers = serializers.IntegerField()
+    parents = serializers.IntegerField()
+
+
+class OrganizationAnalyticsSerializer(serializers.Serializer):
+    organization_id = serializers.UUIDField()
+    totals = OrganizationAnalyticsTotalsSerializer()
+    student_enrollment_growth = OrganizationAnalyticsPointSerializer(many=True)
+    parent_engagement = OrganizationAnalyticsPointSerializer(many=True)
