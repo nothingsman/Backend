@@ -10,6 +10,7 @@ from organizations.tests.factories import OrganizationFactory
 from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework.test import APIRequestFactory
+from student_insights.models import StudentInsight
 from students.api.views import ParentViewSet
 from students.api.views import StudentViewSet
 from students.models import Parent
@@ -1162,3 +1163,140 @@ class TestStudentsAPI:
             "occupation",
             "is_active",
         }.issubset(parameter_names)
+
+
+@pytest.mark.django_db
+class TestStudentInsightDemoTriggerAPI:
+    @pytest.fixture
+    def api_client(self):
+        return APIClient()
+
+    def _build_teacher_with_assignment(
+        self,
+        *,
+        organization,
+        branch,
+        section,
+    ):
+        teacher = Teacher.objects.create(
+            user=UserFactory(role="TEACHER", name="Assigned Teacher"),
+            organization=organization,
+            branch=branch,
+            employee_id="EMP-DEMO-1",
+            specialization="Mathematics",
+        )
+        subject = SubjectFactory(
+            organization=organization,
+            branch=branch,
+            grade=section.grade,
+            name="Mathematics",
+        )
+        TeacherSubjectAssignment.objects.create(
+            teacher=teacher,
+            organization=organization,
+            subject=subject,
+            section=section,
+            academic_year=section.academic_year,
+        )
+        return teacher
+
+    def test_assigned_teacher_can_trigger_student_insight_demo(
+        self,
+        api_client,
+        organization,
+        branch,
+        section,
+    ):
+        teacher = self._build_teacher_with_assignment(
+            organization=organization,
+            branch=branch,
+            section=section,
+        )
+        student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        ParentStudentLinkFactory(
+            student=student,
+            parent=ParentFactory(
+                organizations=[organization],
+                branches=[branch],
+            ),
+        )
+        assessment = SubjectFactory(
+            organization=organization,
+            branch=branch,
+            grade=section.grade,
+            name="Algebra",
+        )
+        assignment = TeacherSubjectAssignment.objects.create(
+            teacher=teacher,
+            organization=organization,
+            subject=assessment,
+            section=section,
+            academic_year=section.academic_year,
+        )
+        from assessments.models import Assessment
+        from assessments.models import AssessmentResult
+
+        result = AssessmentResult.objects.create(
+            organization=organization,
+            assessment=Assessment.objects.create(
+                organization=organization,
+                branch=branch,
+                teacher_assignment=assignment,
+                title="Demo Quiz",
+                task_type=Assessment.TaskType.QUIZ,
+                description="Demo",
+                total_marks="100",
+                passing_marks="50",
+                status=Assessment.Status.PUBLISHED,
+            ),
+            student=student,
+            obtained_marks="30",
+            submission_status=AssessmentResult.SubmissionStatus.GRADED,
+        )
+        del result
+
+        api_client.force_authenticate(user=teacher.user)
+
+        response = api_client.post(
+            f"/api/students/{student.id}/trigger-insight-demo/",
+            {},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["created"] is True
+        assert response.data["category"] == StudentInsight.Category.ACADEMICS
+
+    def test_unassigned_teacher_cannot_trigger_student_insight_demo(
+        self,
+        api_client,
+        organization,
+        branch,
+        section,
+    ):
+        teacher = Teacher.objects.create(
+            user=UserFactory(role="TEACHER", name="Unassigned Teacher"),
+            organization=organization,
+            branch=branch,
+            employee_id="EMP-DEMO-2",
+            specialization="English",
+        )
+        student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+
+        api_client.force_authenticate(user=teacher.user)
+
+        response = api_client.post(
+            f"/api/students/{student.id}/trigger-insight-demo/",
+            {},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND

@@ -5,6 +5,7 @@ from attendance.models import Attendance
 from messaging.models import ChatMessage
 from notifications.models import Notification
 from rest_framework import serializers
+from student_insights.models import StudentInsight
 
 
 def get_public_notifiable_type(obj) -> str:
@@ -18,6 +19,8 @@ def get_public_notifiable_type(obj) -> str:
         return "assessment_result"
     if isinstance(obj, Attendance):
         return "attendance"
+    if isinstance(obj, StudentInsight):
+        return "student_insight"
     return obj.__class__.__name__.lower()
 
 
