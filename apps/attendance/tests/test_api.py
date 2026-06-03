@@ -572,3 +572,89 @@ class TestAttendanceReasonParentAPI:
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_parent_can_update_reason_for_linked_student(
+        self,
+        api_client,
+        parent,
+        attendance_record,
+        organization,
+    ):
+        reason = AttendanceReasonFactory(
+            organization=organization,
+            attendance=attendance_record,
+            reason_category=AttendanceReason.Category.UNKNOWN,
+            note="Old note",
+            parent_confirmed=False,
+        )
+        api_client.force_authenticate(user=parent.user)
+
+        response = api_client.patch(
+            f"/api/attendance-reasons/{reason.id}/parent-update/",
+            {
+                "reason_category": "SICKNESS",
+                "note": "Had a fever",
+                "parent_confirmed": True,
+            },
+            format="json",
+        )
+
+        reason.refresh_from_db()
+        assert response.status_code == status.HTTP_200_OK
+        assert reason.reason_category == "SICKNESS"
+        assert reason.note == "Had a fever"
+        assert reason.parent_confirmed is True
+        assert reason.confirmed_by == parent.user
+
+    def test_parent_cannot_update_reason_for_unlinked_student(
+        self,
+        api_client,
+        attendance_record,
+        organization,
+    ):
+        reason = AttendanceReasonFactory(
+            organization=organization,
+            attendance=attendance_record,
+        )
+        api_client.force_authenticate(user=ParentFactory().user)
+
+        response = api_client.patch(
+            f"/api/attendance-reasons/{reason.id}/parent-update/",
+            {"note": "Should fail"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_parent_update_returns_bad_request_when_reason_not_required(
+        self,
+        api_client,
+        parent,
+        organization,
+        branch,
+        academic_year,
+        section,
+        student,
+    ):
+        attendance_record = AttendanceFactory(
+            organization=organization,
+            branch=branch,
+            academic_year=academic_year,
+            section=section,
+            student=student,
+            date=date(2026, 5, 30),
+            status=Attendance.Status.PRESENT,
+        )
+        reason = AttendanceReasonFactory(
+            organization=organization,
+            attendance=attendance_record,
+        )
+        api_client.force_authenticate(user=parent.user)
+
+        response = api_client.patch(
+            f"/api/attendance-reasons/{reason.id}/parent-update/",
+            {"note": "Should not be accepted"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
