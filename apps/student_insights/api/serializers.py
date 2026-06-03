@@ -3,8 +3,12 @@ from student_insights.models import StudentInsight
 
 
 class StudentInsightSerializer(serializers.ModelSerializer):
-    category_display = serializers.CharField(source="get_category_display", read_only=True)
-    risk_band_display = serializers.CharField(source="get_risk_band_display", read_only=True)
+    category_display = serializers.CharField(
+        source="get_category_display", read_only=True,
+    )
+    risk_band_display = serializers.CharField(
+        source="get_risk_band_display", read_only=True,
+    )
     safety_status_display = serializers.CharField(
         source="get_safety_status_display",
         read_only=True,

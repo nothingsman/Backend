@@ -1,10 +1,9 @@
-from django.db import transaction
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-
 from assessments.models import AssessmentResult
 from attendance.models import Attendance
 from attendance.models import AttendanceReason
+from django.db import transaction
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from messaging.models import ChatMessage
 from student_insights.models import StudentInsight
 from student_insights.tasks import process_student_insight_event
@@ -64,4 +63,3 @@ def enqueue_chat_message_insight(
             "messaging.ChatMessage",
             str(instance.id),
         )
-

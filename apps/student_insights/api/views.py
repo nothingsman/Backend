@@ -31,4 +31,3 @@ class StudentInsightViewSet(
         if student_id:
             queryset = queryset.filter(student_id=student_id)
         return queryset
-

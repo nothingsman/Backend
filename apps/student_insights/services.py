@@ -88,7 +88,9 @@ def _get_student_parents(student: Student):
     )
 
 
-def _model_allowed_output(result: dict[str, Any], payload: dict[str, Any]) -> tuple[bool, list[str]]:
+def _model_allowed_output(
+    result: dict[str, Any], payload: dict[str, Any],
+) -> tuple[bool, list[str]]:
     notes: list[str] = []
     title = str(result.get("title", "")).strip()
     summary = str(result.get("summary", "")).strip()
@@ -102,7 +104,11 @@ def _model_allowed_output(result: dict[str, Any], payload: dict[str, Any]) -> tu
         notes.append("invalid_actions")
     else:
         for action in actions:
-            if not isinstance(action, str) or len(action.strip()) == 0 or len(action) > 120:
+            if (
+                not isinstance(action, str)
+                or len(action.strip()) == 0
+                or len(action) > 120
+            ):
                 notes.append("invalid_action_entry")
                 break
 
@@ -120,7 +126,9 @@ def _model_allowed_output(result: dict[str, Any], payload: dict[str, Any]) -> tu
         str(payload.get("category", "")).lower(),
         *[str(tag).lower() for tag in payload.get("tags", [])],
     ]
-    if expected_keywords and not any(keyword and keyword in output_text for keyword in expected_keywords):
+    if expected_keywords and not any(
+        keyword and keyword in output_text for keyword in expected_keywords
+    ):
         notes.append("missing_expected_context")
 
     return (len(notes) == 0, notes)
@@ -128,8 +136,12 @@ def _model_allowed_output(result: dict[str, Any], payload: dict[str, Any]) -> tu
 
 def _build_fallback_guidance(payload: dict[str, Any]) -> dict[str, Any]:
     return {
-        "title": str(payload.get("fallback_title", "School update for your child"))[:255],
-        "summary": str(payload.get("concern_summary", "A school-related concern was detected."))[:280],
+        "title": str(payload.get("fallback_title", "School update for your child"))[
+            :255
+        ],
+        "summary": str(
+            payload.get("concern_summary", "A school-related concern was detected."),
+        )[:280],
         "recommended_actions": [
             "Talk with your child about this update today.",
             "Review the recent school record with them.",
@@ -147,7 +159,9 @@ def _severity_rank(risk_band: str) -> int:
     }[risk_band]
 
 
-def _recent_duplicate(decision: InsightDecision, student: Student) -> StudentInsight | None:
+def _recent_duplicate(
+    decision: InsightDecision, student: Student,
+) -> StudentInsight | None:
     since = timezone.now() - timedelta(hours=settings.STUDENT_INSIGHTS_COOLDOWN_HOURS)
     return (
         StudentInsight.objects.filter(
@@ -177,7 +191,7 @@ def build_student_signal_snapshot(
             "assessment__teacher_assignment__section",
         )
         .filter(student=student, obtained_marks__isnull=False)
-        .order_by("-created_at")[:5]
+        .order_by("-created_at")[:5],
     )
     attendance_window = Attendance.objects.filter(
         student=student,
@@ -185,21 +199,27 @@ def build_student_signal_snapshot(
     )
     recent_absences = attendance_window.filter(status=Attendance.Status.ABSENT).count()
     recent_lates = attendance_window.filter(status=Attendance.Status.LATE).count()
-    homework_missing = AssessmentResult.objects.filter(
-        student=student,
-        assessment__task_type=Assessment.TaskType.HOMEWORK,
-        assessment__due_date__lte=now,
-    ).filter(
-        Q(submission_status=AssessmentResult.SubmissionStatus.MISSING)
-        | Q(submission_status=AssessmentResult.SubmissionStatus.LATE)
-        | Q(submission_status=AssessmentResult.SubmissionStatus.PENDING),
-    ).count()
+    homework_missing = (
+        AssessmentResult.objects.filter(
+            student=student,
+            assessment__task_type=Assessment.TaskType.HOMEWORK,
+            assessment__due_date__lte=now,
+        )
+        .filter(
+            Q(submission_status=AssessmentResult.SubmissionStatus.MISSING)
+            | Q(submission_status=AssessmentResult.SubmissionStatus.LATE)
+            | Q(submission_status=AssessmentResult.SubmissionStatus.PENDING),
+        )
+        .count()
+    )
 
     return {
         "student_id": str(student.id),
         "organization_id": str(student.organization_id),
         "branch_id": str(student.branch_id),
-        "section_name": student.current_section.name if student.current_section_id else "",
+        "section_name": student.current_section.name
+        if student.current_section_id
+        else "",
         "grade_name": (
             student.current_section.grade.name if student.current_section_id else ""
         ),
@@ -231,7 +251,11 @@ def _subject_decline_percentages(student: Student, subject_id: str) -> list[floa
         )
         .order_by("-created_at")[:3]
     )
-    return [percentage for result in results if (percentage := result.percentage) is not None]
+    return [
+        percentage
+        for result in results
+        if (percentage := result.percentage) is not None
+    ]
 
 
 def _classify_chat_message(message: ChatMessage) -> tuple[str | None, list[str]]:
@@ -400,7 +424,9 @@ def score_student_risk(snapshot: dict[str, Any]) -> InsightDecision:
     return InsightDecision(should_create=False)
 
 
-def generate_parent_guidance(insight_payload: dict[str, Any]) -> tuple[dict[str, Any], str, list[str]]:
+def generate_parent_guidance(
+    insight_payload: dict[str, Any],
+) -> tuple[dict[str, Any], str, list[str]]:
     provider = _get_provider()
     generated = provider.generate(insight_payload)
     result = {
@@ -441,7 +467,9 @@ def _build_redacted_payload(
 
 
 def deliver_student_insight(student_insight_id: str) -> StudentInsight:
-    insight = StudentInsight.objects.select_related("student").get(id=student_insight_id)
+    insight = StudentInsight.objects.select_related("student").get(
+        id=student_insight_id,
+    )
     if insight.delivery_status != StudentInsight.DeliveryStatus.PENDING:
         return insight
 
@@ -537,10 +565,19 @@ def _resolve_event_source(
     source_id: str,
 ) -> tuple[Any, str]:
     source_mapping: dict[str, tuple[type[Any], str]] = {
-        StudentInsight.SourceEventType.ASSESSMENT_RESULT: (AssessmentResult, "student_id"),
+        StudentInsight.SourceEventType.ASSESSMENT_RESULT: (
+            AssessmentResult,
+            "student_id",
+        ),
         StudentInsight.SourceEventType.ATTENDANCE: (Attendance, "student_id"),
-        StudentInsight.SourceEventType.ATTENDANCE_REASON: (AttendanceReason, "attendance__student_id"),
-        StudentInsight.SourceEventType.CHAT_MESSAGE: (ChatMessage, "thread__student_id"),
+        StudentInsight.SourceEventType.ATTENDANCE_REASON: (
+            AttendanceReason,
+            "attendance__student_id",
+        ),
+        StudentInsight.SourceEventType.CHAT_MESSAGE: (
+            ChatMessage,
+            "thread__student_id",
+        ),
     }
     model_class, _student_lookup = source_mapping[source_event_type]
     source = model_class.objects.get(id=source_id)
@@ -616,7 +653,11 @@ def _create_or_reuse_student_insight(
             recommended_actions=generated["recommended_actions"],
             evidence={
                 **(decision.evidence or {}),
-                **({"trigger_context": audit_metadata} if audit_metadata is not None else {}),
+                **(
+                    {"trigger_context": audit_metadata}
+                    if audit_metadata is not None
+                    else {}
+                ),
             },
             model_input_summary=redacted_payload,
             model_output=generated,
@@ -647,7 +688,9 @@ def process_student_event(
     if not decision.should_create:
         return None
 
-    student = Student.objects.select_related("organization", "branch").get(id=student_id)
+    student = Student.objects.select_related("organization", "branch").get(
+        id=student_id,
+    )
     result = _create_or_reuse_student_insight(
         student=student,
         source_event_type=source_event_type,
@@ -662,12 +705,16 @@ def process_student_event(
 def _iter_manual_trigger_candidates(student: Student) -> list[dict[str, str]]:
     candidates: list[dict[str, str]] = []
 
-    academic_results = AssessmentResult.objects.filter(
-        student=student,
-        obtained_marks__isnull=False,
-    ).exclude(
-        assessment__task_type=Assessment.TaskType.HOMEWORK,
-    ).order_by("-created_at")[:5]
+    academic_results = (
+        AssessmentResult.objects.filter(
+            student=student,
+            obtained_marks__isnull=False,
+        )
+        .exclude(
+            assessment__task_type=Assessment.TaskType.HOMEWORK,
+        )
+        .order_by("-created_at")[:5]
+    )
     candidates.extend(
         [
             _build_event_payload(
@@ -679,7 +726,9 @@ def _iter_manual_trigger_candidates(student: Student) -> list[dict[str, str]]:
         ],
     )
 
-    attendance_records = Attendance.objects.filter(student=student).order_by("-date", "-created_at")[:5]
+    attendance_records = Attendance.objects.filter(student=student).order_by(
+        "-date", "-created_at",
+    )[:5]
     candidates.extend(
         [
             _build_event_payload(
@@ -706,7 +755,9 @@ def _iter_manual_trigger_candidates(student: Student) -> list[dict[str, str]]:
         ],
     )
 
-    messages = ChatMessage.objects.filter(thread__student=student).order_by("-created_at")[:5]
+    messages = ChatMessage.objects.filter(thread__student=student).order_by(
+        "-created_at",
+    )[:5]
     candidates.extend(
         [
             _build_event_payload(
@@ -726,7 +777,9 @@ def trigger_manual_student_insight(
     student_id: str,
     triggered_by_user: User,
 ) -> ManualInsightTriggerResult:
-    student = Student.objects.select_related("organization", "branch").get(id=student_id)
+    student = Student.objects.select_related("organization", "branch").get(
+        id=student_id,
+    )
     audit_metadata = {
         "mode": "manual_demo",
         "triggered_by_user_id": str(triggered_by_user.id),

@@ -29,4 +29,3 @@ def process_student_insight_event(
         "insight_id": str(insight.id) if insight is not None else None,
         "processed_at": timezone.now().isoformat(),
     }
-

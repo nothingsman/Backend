@@ -8,8 +8,10 @@ from academics.tests.factories import AcademicYearFactory
 from academics.tests.factories import GradeFactory
 from academics.tests.factories import SectionFactory
 from academics.tests.factories import SubjectFactory
+from accounts.tests.factories import UserFactory
 from assessments.models import Assessment
 from assessments.models import AssessmentResult
+from attendance.models import Attendance
 from messaging.models import ChatMessage
 from messaging.models import ChatThread
 from notifications.models import Notification
@@ -17,13 +19,11 @@ from student_insights.models import StudentInsight
 from student_insights.services import generate_parent_guidance
 from student_insights.services import process_student_event
 from student_insights.services import trigger_manual_student_insight
-from students.tests.factories import ParentStudentLinkFactory
 from students.tests.factories import ParentFactory
+from students.tests.factories import ParentStudentLinkFactory
 from students.tests.factories import StudentFactory
-from accounts.tests.factories import UserFactory
 from teachers.models import Teacher
 from teachers.models import TeacherSubjectAssignment
-from attendance.models import Attendance
 
 
 def _build_assessment_result(
@@ -136,7 +136,9 @@ class TestStudentInsightServices:
 
     def test_assessment_result_creates_insight_and_parent_notification(self):
         student = StudentFactory()
-        parent = ParentFactory(organizations=[student.organization], branches=[student.branch])
+        parent = ParentFactory(
+            organizations=[student.organization], branches=[student.branch],
+        )
         ParentStudentLinkFactory(student=student, parent=parent)
         result = _build_assessment_result(student)
 
@@ -162,7 +164,9 @@ class TestStudentInsightServices:
     def test_chat_message_dedupes_same_concern_within_cooldown(self, settings):
         settings.STUDENT_INSIGHTS_COOLDOWN_HOURS = 24
         student = StudentFactory()
-        parent = ParentFactory(organizations=[student.organization], branches=[student.branch])
+        parent = ParentFactory(
+            organizations=[student.organization], branches=[student.branch],
+        )
         ParentStudentLinkFactory(student=student, parent=parent)
         thread = ChatThread.objects.create(
             student=student,
@@ -223,7 +227,9 @@ class TestStudentInsightServices:
 
     def test_manual_trigger_prefers_academics_over_attendance(self):
         student = StudentFactory()
-        parent = ParentFactory(organizations=[student.organization], branches=[student.branch])
+        parent = ParentFactory(
+            organizations=[student.organization], branches=[student.branch],
+        )
         ParentStudentLinkFactory(student=student, parent=parent)
         triggered_by = UserFactory(role="TEACHER")
         result = _build_assessment_result(student, obtained_marks="30")
@@ -269,7 +275,9 @@ class TestStudentInsightServices:
 
     def test_manual_trigger_reuses_existing_recent_insight(self):
         student = StudentFactory()
-        parent = ParentFactory(organizations=[student.organization], branches=[student.branch])
+        parent = ParentFactory(
+            organizations=[student.organization], branches=[student.branch],
+        )
         ParentStudentLinkFactory(student=student, parent=parent)
         triggered_by = UserFactory(role="TEACHER")
         _build_assessment_result(student, obtained_marks="30")

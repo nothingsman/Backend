@@ -9,4 +9,3 @@ class StudentInsightsConfig(AppConfig):
 
     def ready(self):
         import_module("student_insights.signals")
-
