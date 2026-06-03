@@ -607,7 +607,7 @@ class AssessmentResultViewSet(viewsets.ModelViewSet):
     # PATCH /assessment-results/<id>/confirm-homework/
     # ------------------------------------------------------------------
     @action(detail=True, methods=["patch"], url_path="confirm-homework")
-    def confirm_homework(self, request, pk=None):
+    def confirm_homework(self, request, *args, **kwargs):
         """
         Parent endpoint to confirm their child completed a homework task.
 
@@ -618,6 +618,7 @@ class AssessmentResultViewSet(viewsets.ModelViewSet):
         TODO: Add a permission class to restrict this to the student's
               linked parents (check students.ParentStudentLink).
         """
+        del args, kwargs
         result = self.get_object()
         if not user_can_access_student_as_parent_or_staff(request.user, result.student):
             message = "You cannot confirm this homework result."
