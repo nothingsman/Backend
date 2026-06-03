@@ -28,6 +28,7 @@ from students.models import Parent
 from students.models import ParentStudentLink
 from students.models import Student
 from students.models import StudentAcademicYearSection
+from students.services.insights import trigger_student_insight_demo
 
 from core.api.access import scope_parent_link_queryset_for_user
 from core.api.access import scope_parent_queryset_for_user
@@ -499,6 +500,14 @@ class StudentViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="trigger-insight-demo")
+    @extend_schema(summary="Trigger a parent-facing student insight notification demo")
+    def trigger_insight_demo(self, request, **kwargs):
+        del kwargs
+        student = self.get_object()
+        payload = trigger_student_insight_demo(student)
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 @extend_schema_view(
