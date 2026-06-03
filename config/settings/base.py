@@ -107,6 +107,7 @@ LOCAL_APPS = [
     "media",
     "messaging",
     "notifications",
+    "student_insights",
     # Your stuff: custom apps go here
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
@@ -441,6 +442,14 @@ CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#worker-hijack-root-logger
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+
+# Student insights
+# ------------------------------------------------------------------------------
+STUDENT_INSIGHTS_PROVIDER = env("STUDENT_INSIGHTS_PROVIDER", default="mock")
+STUDENT_INSIGHTS_COOLDOWN_HOURS = env.int(
+    "STUDENT_INSIGHTS_COOLDOWN_HOURS",
+    default=24,
+)
 
 # django-allauth
 # ------------------------------------------------------------------------------
