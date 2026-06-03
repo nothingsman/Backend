@@ -82,14 +82,20 @@ class StudentInsight(UUIDModel, TimeStampedModel):
     title = models.CharField(_("Title"), max_length=255)
     message = models.TextField(_("Message"), blank=True)
     confidence_label = models.CharField(
-        _("Confidence Label"), max_length=20, blank=True,
+        _("Confidence Label"),
+        max_length=20,
+        blank=True,
     )
     recommended_actions = models.JSONField(
-        _("Recommended Actions"), default=list, blank=True,
+        _("Recommended Actions"),
+        default=list,
+        blank=True,
     )
     evidence = models.JSONField(_("Evidence"), default=dict, blank=True)
     model_input_summary = models.JSONField(
-        _("Model Input Summary"), default=dict, blank=True,
+        _("Model Input Summary"),
+        default=dict,
+        blank=True,
     )
     model_output = models.JSONField(_("Model Output"), default=dict, blank=True)
     safety_status = models.CharField(

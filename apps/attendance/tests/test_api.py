@@ -492,6 +492,29 @@ class TestAttendanceReasonParentAPI:
             status=Attendance.Status.ABSENT,
         )
 
+    @pytest.fixture
+    def present_attendance_reason(
+        self,
+        organization,
+        branch,
+        academic_year,
+        section,
+        student,
+    ):
+        attendance_record = AttendanceFactory(
+            organization=organization,
+            branch=branch,
+            academic_year=academic_year,
+            section=section,
+            student=student,
+            date=date(2026, 5, 30),
+            status=Attendance.Status.PRESENT,
+        )
+        return AttendanceReasonFactory(
+            organization=organization,
+            attendance=attendance_record,
+        )
+
     def test_parent_can_create_reason_for_linked_student(
         self,
         api_client,
@@ -630,29 +653,12 @@ class TestAttendanceReasonParentAPI:
         self,
         api_client,
         parent,
-        organization,
-        branch,
-        academic_year,
-        section,
-        student,
+        present_attendance_reason,
     ):
-        attendance_record = AttendanceFactory(
-            organization=organization,
-            branch=branch,
-            academic_year=academic_year,
-            section=section,
-            student=student,
-            date=date(2026, 5, 30),
-            status=Attendance.Status.PRESENT,
-        )
-        reason = AttendanceReasonFactory(
-            organization=organization,
-            attendance=attendance_record,
-        )
         api_client.force_authenticate(user=parent.user)
 
         response = api_client.patch(
-            f"/api/attendance-reasons/{reason.id}/parent-update/",
+            f"/api/attendance-reasons/{present_attendance_reason.id}/parent-update/",
             {"note": "Should not be accepted"},
             format="json",
         )

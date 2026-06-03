@@ -7,20 +7,20 @@ from notifications.models import Notification
 from rest_framework import serializers
 from student_insights.models import StudentInsight
 
+NOTIFIABLE_TYPE_NAMES = (
+    (Announcement, "announcement"),
+    (ChatMessage, "chat_message"),
+    (Assessment, "assessment"),
+    (AssessmentResult, "assessment_result"),
+    (Attendance, "attendance"),
+    (StudentInsight, "student_insight"),
+)
+
 
 def get_public_notifiable_type(obj) -> str:
-    if isinstance(obj, Announcement):
-        return "announcement"
-    if isinstance(obj, ChatMessage):
-        return "chat_message"
-    if isinstance(obj, Assessment):
-        return "assessment"
-    if isinstance(obj, AssessmentResult):
-        return "assessment_result"
-    if isinstance(obj, Attendance):
-        return "attendance"
-    if isinstance(obj, StudentInsight):
-        return "student_insight"
+    for model, public_name in NOTIFIABLE_TYPE_NAMES:
+        if isinstance(obj, model):
+            return public_name
     return obj.__class__.__name__.lower()
 
 

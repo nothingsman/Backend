@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
-from decimal import Decimal
+from typing import TYPE_CHECKING
 from typing import Any
 
-from accounts.models import User
 from analytics.models import InterventionLog
 from assessments.models import Assessment
 from assessments.models import AssessmentResult
@@ -23,6 +22,11 @@ from student_insights.provider import MockInsightGenerationProvider
 from students.models import ParentStudentLink
 from students.models import Student
 
+if TYPE_CHECKING:
+    from decimal import Decimal
+
+    from accounts.models import User
+
 FORBIDDEN_OUTPUT_TERMS = (
     "diagnosis",
     "medical advice",
@@ -35,6 +39,22 @@ CHAT_CONCERN_KEYWORDS: dict[str, tuple[str, ...]] = {
     "academics": ("struggling", "grade", "failed", "homework", "exam", "quiz"),
     "wellbeing": ("stress", "bully", "unsafe", "hurt", "anxious"),
 }
+MAX_TITLE_LENGTH = 255
+MAX_SUMMARY_LENGTH = 280
+MIN_ACTION_COUNT = 2
+MAX_ACTION_COUNT = 3
+MAX_ACTION_LENGTH = 120
+MEDIUM_TAG_MATCH_COUNT = 2
+DECLINE_SAMPLE_SIZE = 3
+DECLINE_THRESHOLD = 15
+HOMEWORK_ALERT_COUNT = 2
+HOMEWORK_HIGH_RISK_COUNT = 3
+LOW_SCORE_THRESHOLD = 60
+MEDIUM_SCORE_THRESHOLD = 50
+HIGH_RISK_SCORE_THRESHOLD = 35
+ATTENDANCE_ABSENCE_ALERT_COUNT = 3
+ATTENDANCE_ABSENCE_HIGH_RISK_COUNT = 4
+ATTENDANCE_LATE_ALERT_COUNT = 4
 
 
 @dataclass(slots=True)
@@ -68,6 +88,13 @@ class ManualInsightTriggerResult:
     source_id: str = ""
 
 
+@dataclass(slots=True, frozen=True)
+class EventContext:
+    source_event_type: str
+    source_model: str
+    source_id: str
+
+
 def _get_provider() -> InsightGenerationProvider:
     provider_name = getattr(settings, "STUDENT_INSIGHTS_PROVIDER", "mock").lower()
     if provider_name in {"mock", "rules", "trusted_api_vendor"}:
@@ -89,25 +116,30 @@ def _get_student_parents(student: Student):
 
 
 def _model_allowed_output(
-    result: dict[str, Any], payload: dict[str, Any],
+    result: dict[str, Any],
+    payload: dict[str, Any],
 ) -> tuple[bool, list[str]]:
     notes: list[str] = []
     title = str(result.get("title", "")).strip()
     summary = str(result.get("summary", "")).strip()
     actions = result.get("recommended_actions")
 
-    if not title or len(title) > 255:
+    if not title or len(title) > MAX_TITLE_LENGTH:
         notes.append("invalid_title")
-    if not summary or len(summary) > 280:
+    if not summary or len(summary) > MAX_SUMMARY_LENGTH:
         notes.append("invalid_summary")
-    if not isinstance(actions, list) or len(actions) < 2 or len(actions) > 3:
+    if (
+        not isinstance(actions, list)
+        or len(actions) < MIN_ACTION_COUNT
+        or len(actions) > MAX_ACTION_COUNT
+    ):
         notes.append("invalid_actions")
     else:
         for action in actions:
             if (
                 not isinstance(action, str)
                 or len(action.strip()) == 0
-                or len(action) > 120
+                or len(action) > MAX_ACTION_LENGTH
             ):
                 notes.append("invalid_action_entry")
                 break
@@ -137,11 +169,11 @@ def _model_allowed_output(
 def _build_fallback_guidance(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "title": str(payload.get("fallback_title", "School update for your child"))[
-            :255
+            :MAX_TITLE_LENGTH
         ],
         "summary": str(
             payload.get("concern_summary", "A school-related concern was detected."),
-        )[:280],
+        )[:MAX_SUMMARY_LENGTH],
         "recommended_actions": [
             "Talk with your child about this update today.",
             "Review the recent school record with them.",
@@ -160,7 +192,8 @@ def _severity_rank(risk_band: str) -> int:
 
 
 def _recent_duplicate(
-    decision: InsightDecision, student: Student,
+    decision: InsightDecision,
+    student: Student,
 ) -> StudentInsight | None:
     since = timezone.now() - timedelta(hours=settings.STUDENT_INSIGHTS_COOLDOWN_HOURS)
     return (
@@ -269,9 +302,172 @@ def _classify_chat_message(message: ChatMessage) -> tuple[str | None, list[str]]
         return None, []
     if "wellbeing" in matched_tags:
         return StudentInsight.RiskBand.HIGH, matched_tags
-    if len(matched_tags) >= 2:
+    if len(matched_tags) >= MEDIUM_TAG_MATCH_COUNT:
         return StudentInsight.RiskBand.MEDIUM, matched_tags
     return StudentInsight.RiskBand.LOW, matched_tags
+
+
+def _score_assessment_result(
+    *,
+    snapshot: dict[str, Any],
+    student: Student,
+    source_id: str,
+) -> InsightDecision:
+    result = AssessmentResult.objects.select_related(
+        "assessment__teacher_assignment__subject",
+    ).get(id=source_id)
+    percentage = result.percentage or 0.0
+    decline = _subject_decline_percentages(
+        student,
+        str(result.assessment.teacher_assignment.subject_id),
+    )
+    declining = (
+        len(decline) >= DECLINE_SAMPLE_SIZE
+        and decline[0] < decline[1] < decline[2]
+        and (decline[2] - decline[0]) >= DECLINE_THRESHOLD
+    )
+    is_homework = result.assessment.task_type == Assessment.TaskType.HOMEWORK
+    has_homework_signal = (
+        result.submission_status
+        in {
+            AssessmentResult.SubmissionStatus.MISSING,
+            AssessmentResult.SubmissionStatus.LATE,
+            AssessmentResult.SubmissionStatus.PENDING,
+        }
+        or snapshot["homework_missing"] >= HOMEWORK_ALERT_COUNT
+    )
+    is_homework_alert = is_homework and has_homework_signal
+    if is_homework_alert:
+        high_risk_homework = snapshot["homework_missing"] >= HOMEWORK_HIGH_RISK_COUNT
+        risk_band = (
+            StudentInsight.RiskBand.HIGH
+            if high_risk_homework
+            else StudentInsight.RiskBand.MEDIUM
+        )
+        return InsightDecision(
+            should_create=True,
+            category=StudentInsight.Category.ENGAGEMENT,
+            risk_band=risk_band,
+            title="Homework follow-up needed",
+            concern_summary="Recent homework records show missing or late completion.",
+            evidence={
+                "homework_missing": snapshot["homework_missing"],
+                "submission_status": result.submission_status,
+                "task_type": result.assessment.task_type,
+            },
+            dedupe_key=f"engagement:homework:{student.id}:{high_risk_homework}",
+            suggested_actions=[
+                "Review incomplete homework with your child.",
+                "Set a study time for the next school days.",
+                "Contact the teacher if support is needed.",
+            ],
+        )
+
+    needs_academic_follow_up = (
+        result.is_below_passing or declining or percentage <= LOW_SCORE_THRESHOLD
+    )
+    if not needs_academic_follow_up:
+        return InsightDecision(should_create=False)
+
+    if percentage <= HIGH_RISK_SCORE_THRESHOLD:
+        risk_band = StudentInsight.RiskBand.HIGH
+    elif percentage <= MEDIUM_SCORE_THRESHOLD or declining:
+        risk_band = StudentInsight.RiskBand.MEDIUM
+    else:
+        risk_band = StudentInsight.RiskBand.LOW
+    return InsightDecision(
+        should_create=True,
+        category=StudentInsight.Category.ACADEMICS,
+        risk_band=risk_band,
+        title="Academic progress needs attention",
+        concern_summary=(
+            "Recent assessment performance suggests your child may need extra "
+            "academic support."
+        ),
+        evidence={
+            "percentage": percentage,
+            "is_below_passing": result.is_below_passing,
+            "declining_scores": declining,
+            "subject_name": result.assessment.subject.name,
+            "task_type": result.assessment.task_type,
+        },
+        dedupe_key=(
+            "academics:"
+            f"{result.assessment.teacher_assignment.subject_id}:"
+            f"{int(percentage // 10)}"
+        ),
+        suggested_actions=[
+            "Ask your child which topic felt difficult.",
+            "Review the latest graded work together.",
+            "Contact the teacher about targeted support.",
+        ],
+    )
+
+
+def _score_attendance(snapshot: dict[str, Any], student: Student) -> InsightDecision:
+    has_attendance_alert = (
+        snapshot["recent_absences"] >= ATTENDANCE_ABSENCE_ALERT_COUNT
+        or snapshot["recent_lates"] >= ATTENDANCE_LATE_ALERT_COUNT
+    )
+    if not has_attendance_alert:
+        return InsightDecision(should_create=False)
+
+    risk_band = (
+        StudentInsight.RiskBand.HIGH
+        if snapshot["recent_absences"] >= ATTENDANCE_ABSENCE_HIGH_RISK_COUNT
+        else StudentInsight.RiskBand.MEDIUM
+    )
+    return InsightDecision(
+        should_create=True,
+        category=StudentInsight.Category.ATTENDANCE,
+        risk_band=risk_band,
+        title="Attendance pattern needs follow-up",
+        concern_summary=(
+            "Recent attendance patterns show repeated absences or lateness."
+        ),
+        evidence={
+            "recent_absences": snapshot["recent_absences"],
+            "recent_lates": snapshot["recent_lates"],
+        },
+        dedupe_key=(
+            f"attendance:{student.id}:{snapshot['recent_absences']}:"
+            f"{snapshot['recent_lates']}"
+        ),
+        suggested_actions=[
+            "Talk with your child about what is affecting attendance.",
+            "Plan for consistent arrival over the next week.",
+            "Contact the school if support is needed.",
+        ],
+    )
+
+
+def _score_chat_message(student: Student, source_id: str) -> InsightDecision:
+    message = ChatMessage.objects.get(id=source_id)
+    risk_band, tags = _classify_chat_message(message)
+    if risk_band is None:
+        return InsightDecision(should_create=False)
+
+    return InsightDecision(
+        should_create=True,
+        category=StudentInsight.Category.COMMUNICATION,
+        risk_band=risk_band,
+        title="Teacher-parent communication follow-up",
+        concern_summary=(
+            "A recent school conversation suggests your child may need additional "
+            "support."
+        ),
+        evidence={
+            "tags": tags,
+            "message_length": len(message.text or ""),
+            "has_attachment": message.attachment_id is not None,
+        },
+        dedupe_key=f"communication:{student.id}:{':'.join(sorted(tags))}",
+        suggested_actions=[
+            "Review the concern discussed in the school message.",
+            "Check in with your child about the issue.",
+            "Reply to the teacher if more context is needed.",
+        ],
+    )
 
 
 def score_student_risk(snapshot: dict[str, Any]) -> InsightDecision:
@@ -280,147 +476,18 @@ def score_student_risk(snapshot: dict[str, Any]) -> InsightDecision:
     student = Student.objects.get(id=snapshot["student_id"])
 
     if event_type == StudentInsight.SourceEventType.ASSESSMENT_RESULT:
-        result = AssessmentResult.objects.select_related(
-            "assessment__teacher_assignment__subject",
-        ).get(id=event["source_id"])
-        percentage = result.percentage or 0.0
-        decline = _subject_decline_percentages(
-            student,
-            str(result.assessment.teacher_assignment.subject_id),
+        return _score_assessment_result(
+            snapshot=snapshot,
+            student=student,
+            source_id=event["source_id"],
         )
-        declining = (
-            len(decline) >= 3
-            and decline[0] < decline[1] < decline[2]
-            and (decline[2] - decline[0]) >= 15
-        )
-        if result.assessment.task_type == Assessment.TaskType.HOMEWORK and (
-            result.submission_status
-            in {
-                AssessmentResult.SubmissionStatus.MISSING,
-                AssessmentResult.SubmissionStatus.LATE,
-                AssessmentResult.SubmissionStatus.PENDING,
-            }
-            or snapshot["homework_missing"] >= 2
-        ):
-            risk_band = (
-                StudentInsight.RiskBand.MEDIUM
-                if snapshot["homework_missing"] < 3
-                else StudentInsight.RiskBand.HIGH
-            )
-            return InsightDecision(
-                should_create=True,
-                category=StudentInsight.Category.ENGAGEMENT,
-                risk_band=risk_band,
-                title="Homework follow-up needed",
-                concern_summary=(
-                    "Recent homework records show missing or late completion."
-                ),
-                evidence={
-                    "homework_missing": snapshot["homework_missing"],
-                    "submission_status": result.submission_status,
-                    "task_type": result.assessment.task_type,
-                },
-                dedupe_key=(
-                    f"engagement:homework:{student.id}:{snapshot['homework_missing'] >= 3}"
-                ),
-                suggested_actions=[
-                    "Review incomplete homework with your child.",
-                    "Set a study time for the next school days.",
-                    "Contact the teacher if support is needed.",
-                ],
-            )
-        if result.is_below_passing or declining or percentage <= 60:
-            if percentage <= 35:
-                risk_band = StudentInsight.RiskBand.HIGH
-            elif percentage <= 50 or declining:
-                risk_band = StudentInsight.RiskBand.MEDIUM
-            else:
-                risk_band = StudentInsight.RiskBand.LOW
-            return InsightDecision(
-                should_create=True,
-                category=StudentInsight.Category.ACADEMICS,
-                risk_band=risk_band,
-                title="Academic progress needs attention",
-                concern_summary=(
-                    "Recent assessment performance suggests your child may need extra academic support."
-                ),
-                evidence={
-                    "percentage": percentage,
-                    "is_below_passing": result.is_below_passing,
-                    "declining_scores": declining,
-                    "subject_name": result.assessment.subject.name,
-                    "task_type": result.assessment.task_type,
-                },
-                dedupe_key=(
-                    f"academics:{result.assessment.teacher_assignment.subject_id}:{int(percentage // 10)}"
-                ),
-                suggested_actions=[
-                    "Ask your child which topic felt difficult.",
-                    "Review the latest graded work together.",
-                    "Contact the teacher about targeted support.",
-                ],
-            )
-        return InsightDecision(should_create=False)
-
     if event_type in {
         StudentInsight.SourceEventType.ATTENDANCE,
         StudentInsight.SourceEventType.ATTENDANCE_REASON,
     }:
-        if snapshot["recent_absences"] >= 3 or snapshot["recent_lates"] >= 4:
-            risk_band = (
-                StudentInsight.RiskBand.HIGH
-                if snapshot["recent_absences"] >= 4
-                else StudentInsight.RiskBand.MEDIUM
-            )
-            return InsightDecision(
-                should_create=True,
-                category=StudentInsight.Category.ATTENDANCE,
-                risk_band=risk_band,
-                title="Attendance pattern needs follow-up",
-                concern_summary=(
-                    "Recent attendance patterns show repeated absences or lateness."
-                ),
-                evidence={
-                    "recent_absences": snapshot["recent_absences"],
-                    "recent_lates": snapshot["recent_lates"],
-                },
-                dedupe_key=(
-                    f"attendance:{student.id}:{snapshot['recent_absences']}:{snapshot['recent_lates']}"
-                ),
-                suggested_actions=[
-                    "Talk with your child about what is affecting attendance.",
-                    "Plan for consistent arrival over the next week.",
-                    "Contact the school if support is needed.",
-                ],
-            )
-        return InsightDecision(should_create=False)
-
+        return _score_attendance(snapshot, student)
     if event_type == StudentInsight.SourceEventType.CHAT_MESSAGE:
-        message = ChatMessage.objects.get(id=event["source_id"])
-        risk_band, tags = _classify_chat_message(message)
-        if risk_band is None:
-            return InsightDecision(should_create=False)
-        return InsightDecision(
-            should_create=True,
-            category=StudentInsight.Category.COMMUNICATION,
-            risk_band=risk_band,
-            title="Teacher-parent communication follow-up",
-            concern_summary=(
-                "A recent school conversation suggests your child may need additional support."
-            ),
-            evidence={
-                "tags": tags,
-                "message_length": len(message.text or ""),
-                "has_attachment": message.attachment_id is not None,
-            },
-            dedupe_key=f"communication:{student.id}:{':'.join(sorted(tags))}",
-            suggested_actions=[
-                "Review the concern discussed in the school message.",
-                "Check in with your child about the issue.",
-                "Reply to the teacher if more context is needed.",
-            ],
-        )
-
+        return _score_chat_message(student, event["source_id"])
     return InsightDecision(should_create=False)
 
 
@@ -513,17 +580,22 @@ def deliver_student_insight(student_insight_id: str) -> StudentInsight:
 def _create_intervention_log(
     student: Student,
     decision: InsightDecision,
-    source_model: str,
-    source_id: str | None,
+    event_context: EventContext,
 ) -> InterventionLog:
     return InterventionLog.objects.create(
         organization=student.organization,
         student=student,
         intervention_type={
-            StudentInsight.Category.ACADEMICS: InterventionLog.InterventionType.LOW_GRADE,
-            StudentInsight.Category.ATTENDANCE: InterventionLog.InterventionType.ATTENDANCE,
+            StudentInsight.Category.ACADEMICS: (
+                InterventionLog.InterventionType.LOW_GRADE
+            ),
+            StudentInsight.Category.ATTENDANCE: (
+                InterventionLog.InterventionType.ATTENDANCE
+            ),
             StudentInsight.Category.ENGAGEMENT: InterventionLog.InterventionType.OTHER,
-            StudentInsight.Category.COMMUNICATION: InterventionLog.InterventionType.BEHAVIOUR,
+            StudentInsight.Category.COMMUNICATION: (
+                InterventionLog.InterventionType.BEHAVIOUR
+            ),
         }[decision.category],
         severity={
             StudentInsight.RiskBand.LOW: InterventionLog.Severity.LOW,
@@ -531,8 +603,8 @@ def _create_intervention_log(
             StudentInsight.RiskBand.HIGH: InterventionLog.Severity.HIGH,
         }[decision.risk_band],
         status=InterventionLog.Status.OPEN,
-        source_model=source_model,
-        source_id=source_id,
+        source_model=event_context.source_model,
+        source_id=event_context.source_id,
         title=decision.title,
         description=decision.concern_summary,
     )
@@ -606,9 +678,7 @@ def _evaluate_event_candidate(
 def _create_or_reuse_student_insight(
     *,
     student: Student,
-    source_event_type: str,
-    source_model: str,
-    source_id: str,
+    event_context: EventContext,
     snapshot: dict[str, Any],
     decision: InsightDecision,
     audit_metadata: dict[str, Any] | None = None,
@@ -631,8 +701,7 @@ def _create_or_reuse_student_insight(
         intervention_log = _create_intervention_log(
             student,
             decision,
-            source_model,
-            source_id,
+            event_context,
         )
 
     with transaction.atomic():
@@ -641,9 +710,9 @@ def _create_or_reuse_student_insight(
             branch=student.branch,
             student=student,
             intervention_log=intervention_log,
-            source_event_type=source_event_type,
-            source_model=source_model,
-            source_id=source_id,
+            source_event_type=event_context.source_event_type,
+            source_model=event_context.source_model,
+            source_id=event_context.source_id,
             dedupe_key=decision.dedupe_key,
             category=decision.category,
             risk_band=decision.risk_band,
@@ -664,7 +733,7 @@ def _create_or_reuse_student_insight(
             safety_status=safety_status,
             safety_notes=safety_notes,
         )
-        deliver_student_insight(str(insight.id))
+        insight = deliver_student_insight(str(insight.id))
         return InsightProcessingResult(insight=insight, reused_existing=False)
 
 
@@ -674,6 +743,11 @@ def process_student_event(
     source_model: str,
     source_id: str,
 ) -> StudentInsight | None:
+    event_context = EventContext(
+        source_event_type=source_event_type,
+        source_model=source_model,
+        source_id=source_id,
+    )
     source, student_id = _resolve_event_source(
         source_event_type=source_event_type,
         source_id=source_id,
@@ -693,9 +767,7 @@ def process_student_event(
     )
     result = _create_or_reuse_student_insight(
         student=student,
-        source_event_type=source_event_type,
-        source_model=source_model,
-        source_id=source_id,
+        event_context=event_context,
         snapshot=snapshot,
         decision=decision,
     )
@@ -727,7 +799,8 @@ def _iter_manual_trigger_candidates(student: Student) -> list[dict[str, str]]:
     )
 
     attendance_records = Attendance.objects.filter(student=student).order_by(
-        "-date", "-created_at",
+        "-date",
+        "-created_at",
     )[:5]
     candidates.extend(
         [
@@ -798,9 +871,11 @@ def trigger_manual_student_insight(
 
         result = _create_or_reuse_student_insight(
             student=student,
-            source_event_type=candidate["source_event_type"],
-            source_model=candidate["source_model"],
-            source_id=candidate["source_id"],
+            event_context=EventContext(
+                source_event_type=candidate["source_event_type"],
+                source_model=candidate["source_model"],
+                source_id=candidate["source_id"],
+            ),
             snapshot=snapshot,
             decision=decision,
             audit_metadata=audit_metadata,

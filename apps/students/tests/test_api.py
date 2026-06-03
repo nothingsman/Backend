@@ -4,6 +4,8 @@ from academics.tests.factories import GradeFactory
 from academics.tests.factories import SectionFactory
 from academics.tests.factories import SubjectFactory
 from accounts.tests.factories import UserFactory
+from assessments.models import Assessment
+from assessments.models import AssessmentResult
 from branches.tests.factories import BranchAdminFactory
 from branches.tests.factories import BranchFactory
 from organizations.tests.factories import OrganizationFactory
@@ -1237,9 +1239,6 @@ class TestStudentInsightDemoTriggerAPI:
             section=section,
             academic_year=section.academic_year,
         )
-        from assessments.models import Assessment
-        from assessments.models import AssessmentResult
-
         result = AssessmentResult.objects.create(
             organization=organization,
             assessment=Assessment.objects.create(

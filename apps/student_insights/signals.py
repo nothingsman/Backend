@@ -53,9 +53,9 @@ def enqueue_attendance_reason_insight(sender, instance: AttendanceReason, **kwar
 def enqueue_chat_message_insight(
     sender,
     instance: ChatMessage,
-    created: bool,
     **kwargs,
 ):
+    created = kwargs.get("created", False)
     del sender, kwargs
     if created:
         _enqueue(

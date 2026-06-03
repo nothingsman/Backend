@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 from datetime import timedelta
 
 import pytest
@@ -12,10 +11,13 @@ from accounts.tests.factories import UserFactory
 from assessments.models import Assessment
 from assessments.models import AssessmentResult
 from attendance.models import Attendance
+from django.utils import timezone
+from django.utils.crypto import get_random_string
 from messaging.models import ChatMessage
 from messaging.models import ChatThread
 from notifications.models import Notification
 from student_insights.models import StudentInsight
+from student_insights.provider import InsightGenerationResult
 from student_insights.services import generate_parent_guidance
 from student_insights.services import process_student_event
 from student_insights.services import trigger_manual_student_insight
@@ -25,22 +27,27 @@ from students.tests.factories import StudentFactory
 from teachers.models import Teacher
 from teachers.models import TeacherSubjectAssignment
 
+NOW = timezone.now
 
-def _build_assessment_result(
-    student,
-    *,
-    title: str = "Quiz 1",
-    task_type: str = Assessment.TaskType.QUIZ,
-    total_marks: str = "100",
-    passing_marks: str = "50",
-    obtained_marks: str = "35",
-    submission_status: str = AssessmentResult.SubmissionStatus.GRADED,
-):
+
+def _build_assessment_result(student, **overrides):
+    title = overrides.pop("title", "Quiz 1")
+    task_type = overrides.pop("task_type", Assessment.TaskType.QUIZ)
+    total_marks = overrides.pop("total_marks", "100")
+    passing_marks = overrides.pop("passing_marks", "50")
+    obtained_marks = overrides.pop("obtained_marks", "45")
+    submission_status = overrides.pop(
+        "submission_status",
+        AssessmentResult.SubmissionStatus.GRADED,
+    )
+    if overrides:
+        pytest.fail(f"Unexpected assessment result overrides: {sorted(overrides)}")
+
     user = student.parent_links.first().parent.user
     teacher = Teacher.objects.create(
         user=user.__class__.objects.create_user(
             email=f"teacher-{student.id}@example.com",
-            password="pass1234",
+            password=get_random_string(16),
             role="TEACHER",
             name="Assigned Teacher",
         ),
@@ -86,7 +93,7 @@ def _build_assessment_result(
         description="Assess concept mastery",
         total_marks=total_marks,
         passing_marks=passing_marks,
-        due_date=date.today(),
+        due_date=NOW().date(),
         status=Assessment.Status.PUBLISHED,
     )
     return AssessmentResult.objects.create(
@@ -105,8 +112,6 @@ class TestStudentInsightServices:
         class UnsafeProvider:
             def generate(self, payload):
                 del payload
-                from student_insights.provider import InsightGenerationResult
-
                 return InsightGenerationResult(
                     title="Medical diagnosis",
                     summary="This requires medical advice immediately.",
@@ -114,16 +119,15 @@ class TestStudentInsightServices:
                     confidence_label="MOCK",
                 )
 
-        monkeypatch.setattr(
-            "student_insights.services._get_provider",
-            lambda: UnsafeProvider(),
-        )
+        monkeypatch.setattr("student_insights.services._get_provider", UnsafeProvider)
 
         generated, safety_status, notes = generate_parent_guidance(
             {
                 "category": "ACADEMICS",
                 "risk_band": "LOW",
-                "concern_summary": "Recent performance suggests additional support may help.",
+                "concern_summary": (
+                    "Recent performance suggests additional support may help."
+                ),
                 "tags": ["academics"],
                 "fallback_title": "Academic support update",
                 "suggested_actions": [],
@@ -137,7 +141,8 @@ class TestStudentInsightServices:
     def test_assessment_result_creates_insight_and_parent_notification(self):
         student = StudentFactory()
         parent = ParentFactory(
-            organizations=[student.organization], branches=[student.branch],
+            organizations=[student.organization],
+            branches=[student.branch],
         )
         ParentStudentLinkFactory(student=student, parent=parent)
         result = _build_assessment_result(student)
@@ -165,7 +170,8 @@ class TestStudentInsightServices:
         settings.STUDENT_INSIGHTS_COOLDOWN_HOURS = 24
         student = StudentFactory()
         parent = ParentFactory(
-            organizations=[student.organization], branches=[student.branch],
+            organizations=[student.organization],
+            branches=[student.branch],
         )
         ParentStudentLinkFactory(student=student, parent=parent)
         thread = ChatThread.objects.create(
@@ -174,7 +180,7 @@ class TestStudentInsightServices:
             teacher=Teacher.objects.create(
                 user=parent.user.__class__.objects.create_user(
                     email=f"teacher2-{student.id}@example.com",
-                    password="pass1234",
+                    password=get_random_string(16),
                     role="TEACHER",
                     name="Concern Teacher",
                 ),
@@ -228,7 +234,8 @@ class TestStudentInsightServices:
     def test_manual_trigger_prefers_academics_over_attendance(self):
         student = StudentFactory()
         parent = ParentFactory(
-            organizations=[student.organization], branches=[student.branch],
+            organizations=[student.organization],
+            branches=[student.branch],
         )
         ParentStudentLinkFactory(student=student, parent=parent)
         triggered_by = UserFactory(role="TEACHER")
@@ -240,7 +247,7 @@ class TestStudentInsightServices:
             section=result.assessment.section,
             student=student,
             recorded_by=triggered_by,
-            date=date.today(),
+            date=NOW().date(),
             status=Attendance.Status.ABSENT,
         )
         Attendance.objects.create(
@@ -250,7 +257,7 @@ class TestStudentInsightServices:
             section=result.assessment.section,
             student=student,
             recorded_by=triggered_by,
-            date=date.today() - timedelta(days=1),
+            date=NOW().date() - timedelta(days=1),
             status=Attendance.Status.ABSENT,
         )
         Attendance.objects.create(
@@ -260,7 +267,7 @@ class TestStudentInsightServices:
             section=result.assessment.section,
             student=student,
             recorded_by=triggered_by,
-            date=date.today() - timedelta(days=2),
+            date=NOW().date() - timedelta(days=2),
             status=Attendance.Status.ABSENT,
         )
 
@@ -276,7 +283,8 @@ class TestStudentInsightServices:
     def test_manual_trigger_reuses_existing_recent_insight(self):
         student = StudentFactory()
         parent = ParentFactory(
-            organizations=[student.organization], branches=[student.branch],
+            organizations=[student.organization],
+            branches=[student.branch],
         )
         ParentStudentLinkFactory(student=student, parent=parent)
         triggered_by = UserFactory(role="TEACHER")

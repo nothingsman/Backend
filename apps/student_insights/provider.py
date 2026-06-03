@@ -20,7 +20,8 @@ class InsightGenerationProvider:
 class MockInsightGenerationProvider(InsightGenerationProvider):
     def generate(self, payload: dict[str, Any]) -> InsightGenerationResult:
         concern = payload.get(
-            "concern_summary", "A school-related concern was detected.",
+            "concern_summary",
+            "A school-related concern was detected.",
         )
         actions = payload.get("suggested_actions") or [
             "Check in with your child about this issue.",
