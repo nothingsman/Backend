@@ -26,6 +26,7 @@ from organizations.api.views import OrganizationViewSet
 from rest_framework.routers import DefaultRouter
 from rest_framework.routers import SimpleRouter
 from schools.api.views import SchoolViewSet
+from student_insights.api.views import StudentInsightViewSet
 from students.api.views import ParentCompleteInvitationView
 from students.api.views import ParentInvitationOtpRequestView
 from students.api.views import ParentInvitationOtpVerifyView
@@ -103,6 +104,7 @@ router.register(
 )
 router.register("announcements", AnnouncementViewSet, basename="announcement")
 router.register("notifications", NotificationViewSet, basename="notification")
+router.register("student-insights", StudentInsightViewSet, basename="student-insight")
 
 app_name = "api"
 urlpatterns = [
