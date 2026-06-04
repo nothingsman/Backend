@@ -3,12 +3,12 @@ from __future__ import annotations
 from email.header import Header
 from typing import TYPE_CHECKING
 from typing import Any
-from urllib.parse import urlsplit
 
 from django.conf import settings as django_settings
 from django.template.loader import render_to_string
 from djoser import email
 
+from .services import build_frontend_base_url
 from .services import get_frontend_domain_for_user
 from .services import get_frontend_protocol_for_user
 from .tasks import send_email_task
@@ -62,12 +62,10 @@ class AsyncMultipartDjoserEmail(email.BaseDjoserEmail):
     def render_email_parts(self) -> dict[str, Any]:
         context = self.get_context_data()
         if url := context.get("url"):
-            domain = str(context["domain"]).rstrip("/")
-            parsed_domain = urlsplit(domain)
-            if parsed_domain.scheme and parsed_domain.netloc:
-                base_url = domain
-            else:
-                base_url = f"{context['protocol']}://{domain}"
+            base_url = build_frontend_base_url(
+                domain=str(context["domain"]),
+                protocol=str(context["protocol"]),
+            )
             context["full_url"] = f"{base_url}/{url}"
         subject = render_to_string(
             _template_path(self.template_stem, "_subject.txt"),
