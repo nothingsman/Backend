@@ -28,7 +28,10 @@ from students.models import Parent
 from students.models import ParentStudentLink
 from students.models import Student
 from students.models import StudentAcademicYearSection
+from students.models import StudentBehaviourIncident
+from students.models import StudentBehaviourRemark
 
+# from students.services.insights import trigger_student_insight_demo
 from core.api.access import scope_parent_link_queryset_for_user
 from core.api.access import scope_parent_queryset_for_user
 from core.api.access import scope_student_queryset_for_user
@@ -47,8 +50,10 @@ from .serializers import ParentReadSerializer
 from .serializers import ParentSerializer
 from .serializers import ParentStudentLinkReadSerializer
 from .serializers import ParentStudentLinkSerializer
+from .serializers import StudentBehaviourLogCreateSerializer
 from .serializers import StudentReadSerializer
 from .serializers import StudentSerializer
+from .serializers import serialize_behaviour_log_entry
 
 STUDENT_LIST_PARAMETERS = [
     OpenApiParameter(
@@ -292,6 +297,27 @@ class StudentViewSet(viewsets.ModelViewSet):
     ]
     ordering = ["created_at", "id"]
 
+    @staticmethod
+    def _build_behaviour_log_entries(student):
+        incidents = StudentBehaviourIncident.objects.select_related("teacher").filter(
+            student=student,
+        )
+        remarks = StudentBehaviourRemark.objects.select_related("teacher").filter(
+            student=student,
+        )
+        entries = [
+            *[
+                serialize_behaviour_log_entry("incident", incident)
+                for incident in incidents
+            ],
+            *[serialize_behaviour_log_entry("remark", remark) for remark in remarks],
+        ]
+        entries.sort(
+            key=lambda item: item["occurredAt"] or item["createdAt"],
+            reverse=True,
+        )
+        return entries
+
     def _base_queryset(self):
         return Student.objects.select_related(
             "current_section__grade",
@@ -499,6 +525,31 @@ class StudentViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="trigger-insight-demo")
+    @extend_schema(summary="Trigger a parent-facing student insight notification demo")
+    def trigger_insight_demo(self, request, **kwargs):
+        del kwargs
+        student = self.get_object()
+        payload = trigger_student_insight_demo(student)
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get", "post"], url_path="behaviour-log")
+    @extend_schema(summary="List or create behaviour log entries for a student")
+    def behaviour_log(self, request, **kwargs):
+        del kwargs
+        student = self.get_object()
+
+        if request.method == "GET":
+            return Response(self._build_behaviour_log_entries(student))
+
+        serializer = StudentBehaviourLogCreateSerializer(
+            data=request.data,
+            context={"request": request, "student": student},
+        )
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.save()
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 @extend_schema_view(
@@ -724,6 +775,37 @@ class ParentViewSet(viewsets.ModelViewSet):
             )
         ]
         return Response(StudentReadSerializer(students, many=True).data)
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"my-students/(?P<student_id>[^/.]+)/behaviour-log",
+    )
+    def my_student_behaviour_log(self, request, student_id=None):
+        try:
+            parent = request.user.parent_profile
+        except Parent.DoesNotExist:
+            return Response(
+                {"detail": "No parent profile found for the authenticated user."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        student = (
+            Student.objects.select_related("current_section__grade", "branch")
+            .filter(
+                parent_links__parent=parent,
+                id=student_id,
+            )
+            .distinct()
+            .first()
+        )
+        if student is None:
+            return Response(
+                {"detail": "Student not found for this parent."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(StudentViewSet._build_behaviour_log_entries(student))
 
 
 @extend_schema_view(
