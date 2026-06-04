@@ -390,7 +390,8 @@ class Command(BaseCommand):
 
         teachers_by_subject: dict[str, Teacher] = {}
         for index, (email, name, employee_id, specialization) in enumerate(
-            teacher_specs, start=3
+            teacher_specs,
+            start=3,
         ):
             user = self._get_or_create_user(
                 email=email,
@@ -493,7 +494,9 @@ class Command(BaseCommand):
                         Student.Gender.MALE if serial % 2 else Student.Gender.FEMALE
                     ),
                     date_of_birth=date(
-                        2012, ((serial - 1) % 12) + 1, ((serial - 1) % 27) + 1
+                        2012,
+                        ((serial - 1) % 12) + 1,
+                        ((serial - 1) % 27) + 1,
                     ),
                     roll_no=f"G{section.grade.level}{section.name}{student_index:02d}",
                     current_section=section,
@@ -701,7 +704,7 @@ class Command(BaseCommand):
         assessment_rows: list[Assessment] = []
         for assignment in teacher_assignments:
             for index, (label, task_type, total_marks, passing_marks) in enumerate(
-                templates
+                templates,
             ):
                 due_date = school_days[min(anchor_indexes[index], len(school_days) - 1)]
                 assessment_rows.append(
@@ -745,10 +748,10 @@ class Command(BaseCommand):
 
                 if submission_status == AssessmentResult.SubmissionStatus.GRADED:
                     ratio = Decimal(str(rng.uniform(0.35, 0.98))).quantize(
-                        Decimal("0.01")
+                        Decimal("0.01"),
                     )
                     obtained_marks = (assessment.total_marks * ratio).quantize(
-                        Decimal("0.01")
+                        Decimal("0.01"),
                     )
                     feedback = "Steady progress over the last month."
                     if (
