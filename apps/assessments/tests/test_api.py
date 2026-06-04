@@ -1184,6 +1184,68 @@ class TestHomeworkConfirmationAPI:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_parent_can_confirm_homework_via_detail_action(
+        self,
+        api_client,
+        parent,
+        homework_result,
+    ):
+        api_client.force_authenticate(user=parent.user)
+
+        response = api_client.patch(
+            f"/api/assessment-results/{homework_result.id}/confirm-homework/",
+            {
+                "parent_confirmed": True,
+                "feedback": "Completed after dinner",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert HomeworkConfirmation.objects.count() == 1
+        confirmation = HomeworkConfirmation.objects.get(
+            assessment=homework_result.assessment,
+            student=homework_result.student,
+        )
+        assert confirmation.is_confirmed is True
+        assert confirmation.feedback == "Completed after dinner"
+        assert confirmation.confirmed_by == parent.user
+
+    def test_unlinked_parent_cannot_confirm_homework_via_detail_action(
+        self,
+        api_client,
+        homework_result,
+    ):
+        api_client.force_authenticate(user=ParentFactory().user)
+
+        response = api_client.patch(
+            f"/api/assessment-results/{homework_result.id}/confirm-homework/",
+            {"parent_confirmed": True},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_non_homework_result_cannot_be_confirmed_via_detail_action(
+        self,
+        api_client,
+        parent,
+        quiz_result,
+    ):
+        api_client.force_authenticate(user=parent.user)
+
+        response = api_client.patch(
+            f"/api/assessment-results/{quiz_result.id}/confirm-homework/",
+            {
+                "parent_confirmed": True,
+                "feedback": "Should fail",
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert HomeworkConfirmation.objects.count() == 0
+
     def test_model_clean_rejects_mismatched_confirmation_context(
         self,
         organization,

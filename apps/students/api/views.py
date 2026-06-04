@@ -24,6 +24,10 @@ from rest_framework.filters import SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from student_insights.api.serializers import (
+    ManualStudentInsightTriggerResponseSerializer,
+)
+from student_insights.services import trigger_manual_student_insight
 from students.models import Parent
 from students.models import ParentStudentLink
 from students.models import Student
@@ -31,7 +35,6 @@ from students.models import StudentAcademicYearSection
 from students.models import StudentBehaviourIncident
 from students.models import StudentBehaviourRemark
 
-# from students.services.insights import trigger_student_insight_demo
 from core.api.access import scope_parent_link_queryset_for_user
 from core.api.access import scope_parent_queryset_for_user
 from core.api.access import scope_student_queryset_for_user
@@ -298,7 +301,7 @@ class StudentViewSet(viewsets.ModelViewSet):
     ordering = ["created_at", "id"]
 
     @staticmethod
-    def _build_behaviour_log_entries(student):
+    def build_behaviour_log_entries(student):
         incidents = StudentBehaviourIncident.objects.select_related("teacher").filter(
             student=student,
         )
@@ -526,13 +529,46 @@ class StudentViewSet(viewsets.ModelViewSet):
         )
         return Response(serializer.data)
 
+    @extend_schema(
+        summary="Manually trigger a student insight for demo purposes",
+        responses={200: ManualStudentInsightTriggerResponseSerializer},
+    )
     @action(detail=True, methods=["post"], url_path="trigger-insight-demo")
-    @extend_schema(summary="Trigger a parent-facing student insight notification demo")
     def trigger_insight_demo(self, request, **kwargs):
         del kwargs
+        if request.user.role != User.Role.TEACHER:
+            return Response(
+                {"detail": "Only teachers can trigger insight demos."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         student = self.get_object()
-        payload = trigger_student_insight_demo(student)
-        return Response(payload, status=status.HTTP_200_OK)
+        result = trigger_manual_student_insight(
+            student_id=str(student.id),
+            triggered_by_user=request.user,
+        )
+        payload = {
+            "created": result.created,
+            "reused_existing": result.reused_existing,
+            "message": result.message,
+            "reason_code": result.reason_code,
+            "source_event_type": result.source_event_type,
+            "source_model": result.source_model,
+            "source_id": result.source_id,
+        }
+        if result.insight is not None:
+            payload.update(
+                {
+                    "insight_id": str(result.insight.id),
+                    "category": result.insight.category,
+                    "risk_band": result.insight.risk_band,
+                    "delivery_status": result.insight.delivery_status,
+                },
+            )
+
+        serializer = ManualStudentInsightTriggerResponseSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["get", "post"], url_path="behaviour-log")
     @extend_schema(summary="List or create behaviour log entries for a student")
@@ -541,7 +577,7 @@ class StudentViewSet(viewsets.ModelViewSet):
         student = self.get_object()
 
         if request.method == "GET":
-            return Response(self._build_behaviour_log_entries(student))
+            return Response(self.build_behaviour_log_entries(student))
 
         serializer = StudentBehaviourLogCreateSerializer(
             data=request.data,
@@ -805,7 +841,7 @@ class ParentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        return Response(StudentViewSet._build_behaviour_log_entries(student))
+        return Response(StudentViewSet.build_behaviour_log_entries(student))
 
 
 @extend_schema_view(
