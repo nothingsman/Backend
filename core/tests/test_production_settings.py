@@ -14,7 +14,7 @@ def test_production_settings_keep_staticfiles_local(monkeypatch) -> None:
     production_settings = importlib.import_module("config.settings.production")
 
     assert production_settings.STORAGES["staticfiles"]["BACKEND"] == (
-        "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        "whitenoise.storage.CompressedStaticFilesStorage"
     )
     assert production_settings.STATIC_URL == "/static/"
     assert "collectfasta" not in production_settings.INSTALLED_APPS

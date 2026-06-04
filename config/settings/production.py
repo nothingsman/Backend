@@ -167,7 +167,9 @@ STORAGES = {
         },
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        # Keep production static handling aligned with local assets and avoid
+        # manifest post-processing failures from third-party admin bundles.
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
 }
 # Media stays on S3/MinIO; static assets are collected into STATIC_ROOT and
