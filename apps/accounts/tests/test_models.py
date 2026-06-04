@@ -17,6 +17,13 @@ def test_user_get_absolute_url(user: User):
 
 
 @pytest.mark.django_db
+def test_user_str_falls_back_when_email_is_missing() -> None:
+    user = UserFactory(email=None, name="Owner Without Email")
+
+    assert str(user) == "Owner Without Email"
+
+
+@pytest.mark.django_db
 def test_user_pii_is_encrypted_at_rest() -> None:
     user = UserFactory(
         email="encrypted@example.com",

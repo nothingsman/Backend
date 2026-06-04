@@ -32,6 +32,7 @@ dependencies = [
   "django-environ==0.13.0",
   "django-erd-generator==0.1.7",
   "django-filter>=25.2",
+  "django-jazzmin>=3.0.4",
   "django-model-utils==5.0.0",
   "django-redis==6.0.0",
   "django-storages[s3]==1.14.6",

@@ -7,6 +7,7 @@ from django.contrib import admin
 from django.urls import reverse
 from organizations.admin import OrganizationAdmin
 from organizations.models import Organization
+from organizations.tests.factories import OrganizationFactory
 
 from media.models import StatusChoices
 from media.tests.factories import MediaFileFactory
@@ -34,6 +35,24 @@ class TestOrganizationAdmin:
             kwargs={"object_id": organization.pk},
         )
         response = admin_client.get(url)
+        assert response.status_code == HTTPStatus.OK
+
+    @pytest.mark.django_db
+    def test_view_organization_with_owner_missing_email(
+        self,
+        admin_client,
+    ):
+        organization = OrganizationFactory(
+            owner__email=None,
+            owner__name="No Email Owner",
+        )
+        url = reverse(
+            "admin:organizations_organization_change",
+            kwargs={"object_id": organization.pk},
+        )
+
+        response = admin_client.get(url)
+
         assert response.status_code == HTTPStatus.OK
 
     def test_view_organization_shows_business_license_preview(
