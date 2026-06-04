@@ -298,3 +298,83 @@ class ParentStudentLink(UUIDModel, TimeStampedModel):
                     ),
                 },
             )
+
+
+class StudentBehaviourIncident(UUIDModel, TimeStampedModel):
+    class Severity(models.TextChoices):
+        LOW = "LOW", _("Low")
+        MEDIUM = "MEDIUM", _("Medium")
+        HIGH = "HIGH", _("High")
+
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.CASCADE,
+        related_name="behaviour_incidents",
+        verbose_name=_("Student"),
+    )
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="student_behaviour_incidents",
+        verbose_name=_("Teacher"),
+        null=True,
+        blank=True,
+    )
+    title = models.CharField(_("Title"), max_length=255)
+    description = models.TextField(_("Description"))
+    severity = models.CharField(
+        _("Severity"),
+        max_length=20,
+        choices=Severity.choices,
+        default=Severity.MEDIUM,
+    )
+    occurred_at = models.DateTimeField(_("Occurred At"))
+    source = models.CharField(_("Source"), max_length=100, default="Teacher Incident")
+
+    class Meta:
+        verbose_name = _("Student Behaviour Incident")
+        verbose_name_plural = _("Student Behaviour Incidents")
+        ordering = ["-occurred_at", "-created_at"]
+
+    def __str__(self):
+        return f"{self.student} - {self.title}"
+
+
+class StudentBehaviourRemark(UUIDModel, TimeStampedModel):
+    class Severity(models.TextChoices):
+        LOW = "LOW", _("Low")
+        MEDIUM = "MEDIUM", _("Medium")
+        HIGH = "HIGH", _("High")
+
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.CASCADE,
+        related_name="behaviour_remarks",
+        verbose_name=_("Student"),
+    )
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="student_behaviour_remarks",
+        verbose_name=_("Teacher"),
+        null=True,
+        blank=True,
+    )
+    title = models.CharField(_("Title"), max_length=255)
+    description = models.TextField(_("Description"))
+    severity = models.CharField(
+        _("Severity"),
+        max_length=20,
+        choices=Severity.choices,
+        default=Severity.LOW,
+    )
+    occurred_at = models.DateTimeField(_("Occurred At"))
+    source = models.CharField(_("Source"), max_length=100, default="Teacher Remark")
+
+    class Meta:
+        verbose_name = _("Student Behaviour Remark")
+        verbose_name_plural = _("Student Behaviour Remarks")
+        ordering = ["-occurred_at", "-created_at"]
+
+    def __str__(self):
+        return f"{self.student} - {self.title}"
