@@ -177,13 +177,21 @@ class Command(BaseCommand):
             status=BranchAdmin.Status.ACTIVE,
         )
 
-        academic_year = AcademicYear.objects.create(
-            organization=organization,
-            branch=branch,
-            name=f"{start_date.year}/{end_date.year}",
-            start_date=start_date,
-            end_date=end_date,
-            is_current=True,
+        academic_year = AcademicYear.objects.get(branch=branch, is_current=True)
+        academic_year.organization = organization
+        academic_year.name = f"{start_date.year}/{end_date.year}"
+        academic_year.start_date = start_date
+        academic_year.end_date = end_date
+        academic_year.is_current = True
+        academic_year.save(
+            update_fields=[
+                "organization",
+                "name",
+                "start_date",
+                "end_date",
+                "is_current",
+                "updated_at",
+            ],
         )
 
         grades = self._create_grades_and_sections(
