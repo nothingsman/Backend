@@ -1,4 +1,4 @@
-# ruff: noqa: PLR2004
+# ruff: noqa: PLR0913, PLR2004
 
 from datetime import timedelta
 
@@ -14,12 +14,15 @@ from assessments.models import AssessmentResult
 from attendance.tests.factories import AttendanceSummaryFactory
 from branches.tests.factories import BranchFactory
 from django.utils import timezone
+from messaging.models import ChatMessage
+from messaging.models import ChatThread
 from organizations.tests.factories import OrganizationFactory
 from rest_framework import status
 from rest_framework.test import APIClient
 from student_insights.models import StudentInsight
 from students.tests.factories import ParentFactory
 from students.tests.factories import ParentStudentLinkFactory
+from students.tests.factories import StudentAcademicYearSectionFactory
 from students.tests.factories import StudentFactory
 from teachers.models import Teacher
 from teachers.models import TeacherSubjectAssignment
@@ -30,6 +33,422 @@ EXPECTED_COMPLETION_RATE = 60.0
 EXPECTED_CLASS_AVERAGE = 67.5
 EXPECTED_TREND_DELTA = 15.0
 EXPECTED_HEATMAP_CELLS = 28
+
+
+@pytest.mark.django_db
+class TestDashboardOverviewAPI:
+    @pytest.fixture
+    def api_client(self):
+        return APIClient()
+
+    @pytest.fixture
+    def organization(self):
+        return OrganizationFactory()
+
+    @pytest.fixture
+    def branch(self, organization):
+        return BranchFactory(school__organization=organization)
+
+    @pytest.fixture
+    def academic_year(self, organization, branch):
+        return AcademicYear.objects.get(
+            organization=organization,
+            branch=branch,
+            name="2025/2026",
+        )
+
+    @pytest.fixture
+    def other_academic_year(self, organization, branch):
+        return AcademicYear.objects.create(
+            organization=organization,
+            branch=branch,
+            name="2024/2025",
+            start_date=timezone.localdate() - timedelta(days=400),
+            end_date=timezone.localdate() - timedelta(days=35),
+            is_current=False,
+        )
+
+    @pytest.fixture
+    def grade(self, organization, branch):
+        return GradeFactory(
+            organization=organization,
+            branch=branch,
+            name="Grade 7",
+            level=7,
+        )
+
+    @pytest.fixture
+    def section(self, organization, branch, grade, academic_year):
+        return SectionFactory(
+            organization=organization,
+            branch=branch,
+            grade=grade,
+            academic_year=academic_year,
+            name="A",
+        )
+
+    @pytest.fixture
+    def other_section(self, organization, branch, grade, academic_year):
+        return SectionFactory(
+            organization=organization,
+            branch=branch,
+            grade=grade,
+            academic_year=academic_year,
+            name="B",
+        )
+
+    @pytest.fixture
+    def subject_math(self, organization, branch, grade):
+        return SubjectFactory(
+            organization=organization,
+            branch=branch,
+            grade=grade,
+            name="Mathematics",
+            code="MATH-7",
+        )
+
+    @pytest.fixture
+    def subject_english(self, organization, branch, grade):
+        return SubjectFactory(
+            organization=organization,
+            branch=branch,
+            grade=grade,
+            name="English",
+            code="ENG-7",
+        )
+
+    @pytest.fixture
+    def teacher(self, organization, branch):
+        return Teacher.objects.create(
+            user=UserFactory(role="TEACHER", name="Dashboard Teacher"),
+            organization=organization,
+            branch=branch,
+            employee_id="EMP-DASH-1",
+            specialization="Mathematics",
+        )
+
+    @pytest.fixture
+    def other_teacher(self, organization, branch):
+        return Teacher.objects.create(
+            user=UserFactory(role="TEACHER", name="Other Teacher"),
+            organization=organization,
+            branch=branch,
+            employee_id="EMP-DASH-2",
+            specialization="English",
+        )
+
+    def _create_assignment(
+        self,
+        *,
+        organization,
+        branch,
+        academic_year,
+        section,
+        subject,
+        teacher,
+    ):
+        return TeacherSubjectAssignment.objects.create(
+            teacher=teacher,
+            organization=organization,
+            subject=subject,
+            section=section,
+            academic_year=academic_year,
+        )
+
+    def _create_assessment(
+        self,
+        *,
+        organization,
+        branch,
+        assignment,
+        title,
+        due_date,
+        status_value=Assessment.Status.PUBLISHED,
+    ):
+        return Assessment.objects.create(
+            organization=organization,
+            branch=branch,
+            teacher_assignment=assignment,
+            title=title,
+            task_type=Assessment.TaskType.HOMEWORK,
+            total_marks=100,
+            due_date=due_date,
+            status=status_value,
+        )
+
+    def _create_result(
+        self,
+        *,
+        organization,
+        assessment,
+        student,
+        marks,
+    ):
+        return AssessmentResult.objects.create(
+            organization=organization,
+            assessment=assessment,
+            student=student,
+            obtained_marks=marks,
+            submission_status=AssessmentResult.SubmissionStatus.GRADED,
+        )
+
+    def _create_parent_thread(self, *, student, teacher, parent, parent_message_count):
+        thread = ChatThread.objects.create(
+            parent=parent,
+            teacher=teacher,
+            student=student,
+            organization=student.organization,
+            branch=student.branch,
+        )
+        for index in range(parent_message_count):
+            ChatMessage.objects.create(
+                thread=thread,
+                sender=parent.user,
+                text=f"Parent message {index + 1}",
+            )
+        return thread
+
+    def test_teacher_gets_section_overview_with_subject_filter(
+        self,
+        api_client,
+        organization,
+        branch,
+        academic_year,
+        section,
+        other_section,
+        subject_math,
+        subject_english,
+        teacher,
+        other_teacher,
+    ):
+        today = timezone.localdate()
+        math_assignment = self._create_assignment(
+            organization=organization,
+            branch=branch,
+            academic_year=academic_year,
+            section=section,
+            subject=subject_math,
+            teacher=teacher,
+        )
+        english_assignment = self._create_assignment(
+            organization=organization,
+            branch=branch,
+            academic_year=academic_year,
+            section=section,
+            subject=subject_english,
+            teacher=teacher,
+        )
+        other_assignment = self._create_assignment(
+            organization=organization,
+            branch=branch,
+            academic_year=academic_year,
+            section=other_section,
+            subject=subject_math,
+            teacher=other_teacher,
+        )
+
+        student_a = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        student_b = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        student_c = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        other_student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=other_section,
+        )
+        for student in (student_a, student_b, student_c):
+            StudentAcademicYearSectionFactory(
+                student=student,
+                academic_year=academic_year,
+                section=section,
+            )
+        StudentAcademicYearSectionFactory(
+            student=other_student,
+            academic_year=academic_year,
+            section=other_section,
+        )
+
+        math_homework = self._create_assessment(
+            organization=organization,
+            branch=branch,
+            assignment=math_assignment,
+            title="Math Homework",
+            due_date=today + timedelta(days=1),
+        )
+        self._create_assessment(
+            organization=organization,
+            branch=branch,
+            assignment=english_assignment,
+            title="English Homework",
+            due_date=today + timedelta(days=2),
+        )
+        self._create_assessment(
+            organization=organization,
+            branch=branch,
+            assignment=other_assignment,
+            title="Other Section Homework",
+            due_date=today + timedelta(days=1),
+        )
+
+        english_quiz = self._create_assessment(
+            organization=organization,
+            branch=branch,
+            assignment=english_assignment,
+            title="English Quiz",
+            due_date=today - timedelta(days=1),
+        )
+        other_section_result_assessment = self._create_assessment(
+            organization=organization,
+            branch=branch,
+            assignment=other_assignment,
+            title="Other Section Result",
+            due_date=today - timedelta(days=2),
+        )
+
+        self._create_result(
+            organization=organization,
+            assessment=math_homework,
+            student=student_a,
+            marks=90,
+        )
+        self._create_result(
+            organization=organization,
+            assessment=math_homework,
+            student=student_b,
+            marks=72,
+        )
+        self._create_result(
+            organization=organization,
+            assessment=math_homework,
+            student=student_c,
+            marks=55,
+        )
+        self._create_result(
+            organization=organization,
+            assessment=english_quiz,
+            student=student_a,
+            marks=80,
+        )
+        self._create_result(
+            organization=organization,
+            assessment=other_section_result_assessment,
+            student=other_student,
+            marks=20,
+        )
+
+        low_parent = ParentFactory(organizations=[organization], branches=[branch])
+        moderate_parent = ParentFactory(organizations=[organization], branches=[branch])
+        high_parent = ParentFactory(organizations=[organization], branches=[branch])
+        ParentStudentLinkFactory(student=student_a, parent=low_parent)
+        ParentStudentLinkFactory(student=student_b, parent=moderate_parent)
+        ParentStudentLinkFactory(student=student_c, parent=high_parent)
+        self._create_parent_thread(
+            student=student_a,
+            teacher=teacher,
+            parent=low_parent,
+            parent_message_count=0,
+        )
+        self._create_parent_thread(
+            student=student_b,
+            teacher=teacher,
+            parent=moderate_parent,
+            parent_message_count=1,
+        )
+        self._create_parent_thread(
+            student=student_c,
+            teacher=teacher,
+            parent=high_parent,
+            parent_message_count=3,
+        )
+
+        api_client.force_authenticate(user=teacher.user)
+        response = api_client.get(
+            "/api/dashboard/overview/",
+            {
+                "section_id": str(section.id),
+                "academic_year_id": str(academic_year.id),
+                "subject_id": str(subject_math.id),
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {
+            "total_students": 3,
+            "average_performance": 72.33,
+            "tasks_due": 1,
+            "performance_distribution": {
+                "A": 1,
+                "B": 1,
+                "C": 1,
+                "F": 0,
+            },
+            "parent_engagement": {
+                "high": 1,
+                "moderate": 1,
+                "low": 1,
+            },
+        }
+
+    def test_teacher_cannot_access_unassigned_section(
+        self,
+        api_client,
+        academic_year,
+        other_section,
+        teacher,
+    ):
+        api_client.force_authenticate(user=teacher.user)
+
+        response = api_client.get(
+            "/api/dashboard/overview/",
+            {
+                "section_id": str(other_section.id),
+                "academic_year_id": str(academic_year.id),
+            },
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_endpoint_rejects_mismatched_academic_year(
+        self,
+        api_client,
+        section,
+        academic_year,
+        other_academic_year,
+        teacher,
+        organization,
+        branch,
+        subject_math,
+    ):
+        TeacherSubjectAssignment.objects.create(
+            teacher=teacher,
+            organization=organization,
+            subject=subject_math,
+            section=section,
+            academic_year=academic_year,
+        )
+        api_client.force_authenticate(user=teacher.user)
+
+        response = api_client.get(
+            "/api/dashboard/overview/",
+            {
+                "section_id": str(section.id),
+                "academic_year_id": str(other_academic_year.id),
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "does not match the section" in response.data["detail"]
 
 
 @pytest.mark.django_db
@@ -300,7 +719,7 @@ class TestStudentAnalyticsAPI:
         return parent.user
 
     @pytest.fixture(autouse=True)
-    def setup_assignments(  # noqa: PLR0913
+    def setup_assignments(
         self,
         organization,
         academic_year,
@@ -328,7 +747,7 @@ class TestStudentAnalyticsAPI:
             "english": english_assignment,
         }
 
-    def _create_result(  # noqa: PLR0913
+    def _create_result(
         self,
         *,
         assignment,
@@ -360,7 +779,7 @@ class TestStudentAnalyticsAPI:
         result.refresh_from_db()
         return result
 
-    def test_parent_can_fetch_aggregated_student_analytics(  # noqa: PLR0913
+    def test_parent_can_fetch_aggregated_student_analytics(
         self,
         api_client,
         parent,

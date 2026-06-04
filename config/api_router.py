@@ -5,6 +5,7 @@ from academics.api.views import GradeViewSet
 from academics.api.views import SectionViewSet
 from academics.api.views import SubjectViewSet
 from accounts.api.views import UserViewSet
+from analytics.api.views import DashboardOverviewView
 from analytics.api.views import InterventionLogViewSet
 from analytics.api.views import StudentAnalyticsView
 from announcements.api.views import AnnouncementViewSet
@@ -109,6 +110,11 @@ router.register("student-insights", StudentInsightViewSet, basename="student-ins
 
 app_name = "api"
 urlpatterns = [
+    path(
+        "dashboard/overview/",
+        DashboardOverviewView.as_view(),
+        name="dashboard-overview",
+    ),
     path(
         "v1/student-analytics/<uuid:child_id>/",
         StudentAnalyticsView.as_view(),
