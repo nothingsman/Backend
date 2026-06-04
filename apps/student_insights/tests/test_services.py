@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import timedelta
 import json
+from datetime import timedelta
 
 import pytest
 from academics.tests.factories import AcademicYearFactory
@@ -29,6 +29,7 @@ from teachers.models import Teacher
 from teachers.models import TeacherSubjectAssignment
 
 NOW = timezone.now
+GEMINI_TIMEOUT_SECONDS = 5
 
 
 def _build_assessment_result(student, **overrides):
@@ -117,7 +118,7 @@ class TestStudentInsightServices:
         settings.STUDENT_INSIGHTS_PROVIDER = "gemini"
         settings.GEMINI_API_KEY = "test-key"
         settings.GEMINI_MODEL = "gemini-test"
-        settings.GEMINI_TIMEOUT_SECONDS = 5
+        settings.GEMINI_TIMEOUT_SECONDS = GEMINI_TIMEOUT_SECONDS
 
         class FakeResponse:
             def raise_for_status(self):
@@ -138,8 +139,14 @@ class TestStudentInsightServices:
                                                     "suggests extra support may help."
                                                 ),
                                                 "recommended_actions": [
-                                                    "Review the latest schoolwork together.",
-                                                    "Contact the teacher if help is needed.",
+                                                    (
+                                                        "Review the latest schoolwork "
+                                                        "together."
+                                                    ),
+                                                    (
+                                                        "Contact the teacher if help "
+                                                        "is needed."
+                                                    ),
                                                 ],
                                                 "confidence_label": "GEMINI",
                                             },
@@ -154,7 +161,7 @@ class TestStudentInsightServices:
         def fake_post(url, *, params, json, timeout):
             assert "gemini-test:generateContent" in url
             assert params == {"key": "test-key"}
-            assert timeout == 5
+            assert timeout == GEMINI_TIMEOUT_SECONDS
             assert "Payload:" in json["contents"][0]["parts"][0]["text"]
             return FakeResponse()
 
@@ -188,7 +195,8 @@ class TestStudentInsightServices:
 
         def fake_post(*args, **kwargs):
             del args, kwargs
-            raise RuntimeError("provider unavailable")
+            msg = "provider unavailable"
+            raise RuntimeError(msg)
 
         monkeypatch.setattr("student_insights.provider.httpx.post", fake_post)
 

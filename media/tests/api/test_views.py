@@ -13,6 +13,7 @@ from media.tests.factories import MediaFileFactory
 
 pytestmark = pytest.mark.django_db
 CONFIRMED_FILE_SIZE = 1024
+EXPECTED_DUPLICATE_UPLOAD_COUNT = 2
 
 
 @pytest.fixture
@@ -65,44 +66,38 @@ class TestUploadInitiation:
         assert media.status == StatusChoices.PENDING
         assert media.uploaded_by == authenticated_user
 
-    def test_upload_fingerprinting_returns_existing(
+    def test_upload_allows_same_file_multiple_times(
         self,
         authenticated_client,
         authenticated_user,
     ):
         with mock.patch(
-            "media.api.views.MediaUploadViewSet._generate_fingerprint",
-            return_value="same-fingerprint",
-        ):
-            with mock.patch(
-                "media.api.views.S3StorageClient.create_multipart_upload",
-            ) as mock_create:
-                mock_create.return_value = "upload-1"
+            "media.api.views.S3StorageClient.create_multipart_upload",
+        ) as mock_create:
+            mock_create.side_effect = ["upload-1", "upload-2"]
 
-                response1 = authenticated_client.post(
-                    "/api/media/upload",
-                    {"file_name": "test.pdf", "content_type": "application/pdf"},
-                    format="json",
-                )
+            response1 = authenticated_client.post(
+                "/api/media/upload",
+                {"file_name": "test.pdf", "content_type": "application/pdf"},
+                format="json",
+            )
+            response2 = authenticated_client.post(
+                "/api/media/upload",
+                {"file_name": "test.pdf", "content_type": "application/pdf"},
+                format="json",
+            )
 
-            first_id = response1.json()["data"]["id"]
-
-            with mock.patch(
-                "media.api.views.S3StorageClient.create_multipart_upload",
-            ) as mock_create:
-                mock_create.return_value = "upload-2"
-
-                response2 = authenticated_client.post(
-                    "/api/media/upload",
-                    {"file_name": "test.pdf", "content_type": "application/pdf"},
-                    format="json",
-                )
-
-        assert response2.status_code == status.HTTP_200_OK
+        assert response1.status_code == status.HTTP_201_CREATED
+        assert response2.status_code == status.HTTP_201_CREATED
+        first_id = response1.json()["data"]["id"]
         second_id = response2.json()["data"]["id"]
-        assert str(first_id) == str(second_id)
+        assert str(first_id) != str(second_id)
+        assert response1.json()["data"]["upload_id"] == "upload-1"
         assert response2.json()["data"]["upload_id"] == "upload-2"
-        assert MediaFile.objects.filter(uploaded_by=authenticated_user).count() == 1
+        assert (
+            MediaFile.objects.filter(uploaded_by=authenticated_user).count()
+            == EXPECTED_DUPLICATE_UPLOAD_COUNT
+        )
 
     def test_upload_validates_file_name(self, authenticated_client):
         response = authenticated_client.post(

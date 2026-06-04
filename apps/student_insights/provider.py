@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -14,6 +14,10 @@ class InsightGenerationResult:
     summary: str
     recommended_actions: list[str]
     confidence_label: str
+
+
+class GeminiResponseError(ValueError):
+    """Raised when the Gemini API returns an unexpected response shape."""
 
 
 class InsightGenerationProvider:
@@ -95,7 +99,7 @@ class GeminiInsightGenerationProvider(InsightGenerationProvider):
             "confidence, or internal processing.\n"
             "Do not include medical advice, legal advice, or punishment.\n"
             "Return strict JSON with exactly these keys: "
-            'title, summary, recommended_actions, confidence_label.\n'
+            "title, summary, recommended_actions, confidence_label.\n"
             "The recommended_actions value must be an array of 2 or 3 short strings.\n"
             'Use "GEMINI" for confidence_label.\n'
             f"Payload: {serialized_payload}"
@@ -104,18 +108,21 @@ class GeminiInsightGenerationProvider(InsightGenerationProvider):
     def _extract_text(self, response_data: dict[str, Any]) -> str:
         candidates = response_data.get("candidates")
         if not isinstance(candidates, list) or not candidates:
-            raise ValueError("Gemini response did not contain candidates.")
+            msg = "Gemini response did not contain candidates."
+            raise GeminiResponseError(msg)
 
         content = candidates[0].get("content", {})
         parts = content.get("parts")
         if not isinstance(parts, list):
-            raise ValueError("Gemini response content parts are missing.")
+            msg = "Gemini response content parts are missing."
+            raise GeminiResponseError(msg)
 
         for part in parts:
             if isinstance(part, dict) and isinstance(part.get("text"), str):
                 return part["text"]
 
-        raise ValueError("Gemini response did not contain a text part.")
+        msg = "Gemini response did not contain a text part."
+        raise GeminiResponseError(msg)
 
     def _parse_json_payload(self, raw_text: str) -> dict[str, Any]:
         candidate_text = raw_text.strip()
@@ -123,7 +130,8 @@ class GeminiInsightGenerationProvider(InsightGenerationProvider):
             candidate_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", candidate_text)
         data = json.loads(candidate_text)
         if not isinstance(data, dict):
-            raise ValueError("Gemini response JSON was not an object.")
+            msg = "Gemini response JSON was not an object."
+            raise GeminiResponseError(msg)
         return data
 
 

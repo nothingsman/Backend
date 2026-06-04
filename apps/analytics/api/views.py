@@ -1,12 +1,21 @@
+from accounts.models import User
 from analytics.models import InterventionLog
+from analytics.services import build_student_analytics_payload
+from django.core.exceptions import ObjectDoesNotExist
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.filters import SearchFilter
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from students.models import Student
 
 from core.api.access import scope_intervention_queryset_for_user
 
 from .serializers import InterventionLogSerializer
+from .serializers import StudentAnalyticsResponseSerializer
 
 
 class InterventionLogViewSet(viewsets.ModelViewSet):
@@ -70,3 +79,42 @@ class InterventionLogViewSet(viewsets.ModelViewSet):
                 "them."
             )
             raise PermissionDenied(message)
+
+
+@extend_schema(
+    responses={200: StudentAnalyticsResponseSerializer},
+)
+class StudentAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, child_id):
+        if request.user.role != User.Role.PARENT:
+            message = "Only parents can access student analytics."
+            raise PermissionDenied(message)
+
+        try:
+            parent_profile = request.user.parent_profile
+        except ObjectDoesNotExist as exc:
+            message = "Parent profile not found."
+            raise PermissionDenied(message) from exc
+
+        student = get_object_or_404(
+            Student.objects.select_related(
+                "current_section__academic_year",
+                "current_section__grade",
+                "organization",
+                "branch",
+            ).distinct(),
+            id=child_id,
+            parent_links__parent=parent_profile,
+        )
+        payload = {
+            "success": True,
+            "data": build_student_analytics_payload(student),
+        }
+        validator = StudentAnalyticsResponseSerializer(data=payload)
+        validator.is_valid(raise_exception=True)
+        response_serializer = StudentAnalyticsResponseSerializer(
+            validator.validated_data,
+        )
+        return Response(response_serializer.data)

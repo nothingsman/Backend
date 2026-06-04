@@ -1,4 +1,6 @@
 # ruff: noqa: E501
+from urllib.parse import urlsplit
+
 from .base import *  # noqa: F403
 from .base import DATABASES
 from .base import INSTALLED_APPS
@@ -67,6 +69,11 @@ SECURE_CONTENT_TYPE_NOSNIFF = env.bool(
     "DJANGO_SECURE_CONTENT_TYPE_NOSNIFF",
     default=True,
 )
+MIDDLEWARE = [
+    MIDDLEWARE[0],  # noqa: F405
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    *MIDDLEWARE[1:],  # noqa: F405
+]
 
 S3_PUBLIC_ENDPOINT = env("S3_PUBLIC_ENDPOINT", default="")
 
@@ -76,6 +83,27 @@ def _env_or_fallback(primary_key: str, fallback_key: str, default=None):
     if primary_value not in ("", None):
         return primary_value
     return env(fallback_key, default=default)
+
+
+def _build_public_storage_url_parts(
+    endpoint: str,
+    bucket_name: str,
+) -> tuple[str | None, str | None, str | None]:
+    if not endpoint:
+        return None, None, None
+
+    parsed_endpoint = urlsplit(endpoint.rstrip("/"))
+    path_parts = [part for part in parsed_endpoint.path.split("/") if part]
+    if bucket_name and (not path_parts or path_parts[-1] != bucket_name):
+        path_parts.append(bucket_name)
+
+    custom_domain = parsed_endpoint.netloc
+    if path_parts:
+        custom_domain = f"{custom_domain}/{'/'.join(path_parts)}"
+
+    base_url = f"{parsed_endpoint.scheme}://{custom_domain}"
+    protocol = f"{parsed_endpoint.scheme}:"
+    return custom_domain, protocol, base_url
 
 
 # https://django-storages.readthedocs.io/en/latest/backends/amazon-S3.html#settings
@@ -121,7 +149,12 @@ AWS_S3_ADDRESSING_STYLE = env(
 # https://django-storages.readthedocs.io/en/latest/backends/amazon-S3.html#cloudfront
 AWS_S3_CUSTOM_DOMAIN = env("DJANGO_AWS_S3_CUSTOM_DOMAIN", default=None)
 aws_s3_domain = AWS_S3_CUSTOM_DOMAIN or f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
-# STATIC & MEDIA
+(
+    _public_storage_custom_domain,
+    _public_storage_protocol,
+    _public_storage_base_url,
+) = _build_public_storage_url_parts(S3_PUBLIC_ENDPOINT, AWS_STORAGE_BUCKET_NAME)
+# STORAGE
 # ------------------------
 STORAGES = {
     "default": {
@@ -129,25 +162,24 @@ STORAGES = {
         "OPTIONS": {
             "location": "media",
             "file_overwrite": False,
+            "custom_domain": _public_storage_custom_domain or AWS_S3_CUSTOM_DOMAIN,
+            "url_protocol": _public_storage_protocol,
         },
     },
     "staticfiles": {
-        "BACKEND": "storages.backends.s3.S3Storage",
-        "OPTIONS": {
-            "location": "static",
-            "default_acl": "public-read",
-        },
+        # Keep production static handling aligned with local assets and avoid
+        # manifest post-processing failures from third-party admin bundles.
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
 }
-if S3_PUBLIC_ENDPOINT:
-    _s3_public_base_url = S3_PUBLIC_ENDPOINT.rstrip("/")
-    MEDIA_URL = f"{_s3_public_base_url}/media/"
-    STATIC_URL = f"{_s3_public_base_url}/static/"
+# Media stays on S3/MinIO; static assets are collected into STATIC_ROOT and
+# served by WhiteNoise from the Django container.
+if _public_storage_base_url:
+    MEDIA_URL = f"{_public_storage_base_url}/media/"
 else:
     MEDIA_URL = f"https://{aws_s3_domain}/media/"
-    STATIC_URL = f"https://{aws_s3_domain}/static/"
 
-COLLECTFASTA_STRATEGY = "collectfasta.strategies.boto3.Boto3Strategy"
+STATIC_URL = "/static/"
 
 # EMAIL
 # ------------------------------------------------------------------------------
@@ -181,11 +213,6 @@ EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
 ANYMAIL = {
     "RESEND_API_KEY": env("RESEND_API_KEY"),
 }
-
-# Collectfasta
-# ------------------------------------------------------------------------------
-# https://github.com/jasongi/collectfasta#installation
-INSTALLED_APPS = ["collectfasta", *INSTALLED_APPS]
 
 # LOGGING
 # ------------------------------------------------------------------------------

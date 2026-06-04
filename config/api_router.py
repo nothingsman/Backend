@@ -6,6 +6,7 @@ from academics.api.views import SectionViewSet
 from academics.api.views import SubjectViewSet
 from accounts.api.views import UserViewSet
 from analytics.api.views import InterventionLogViewSet
+from analytics.api.views import StudentAnalyticsView
 from announcements.api.views import AnnouncementViewSet
 from assessments.api.views import AssessmentResultViewSet
 from assessments.api.views import AssessmentViewSet
@@ -108,6 +109,11 @@ router.register("student-insights", StudentInsightViewSet, basename="student-ins
 
 app_name = "api"
 urlpatterns = [
+    path(
+        "v1/student-analytics/<uuid:child_id>/",
+        StudentAnalyticsView.as_view(),
+        name="student-analytics",
+    ),
     path(
         "calendar-documents/current/",
         CalendarDocumentCurrentView.as_view(),

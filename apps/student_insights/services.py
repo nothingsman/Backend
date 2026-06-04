@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 from typing import Any
 
+import httpx
 from analytics.models import InterventionLog
 from assessments.models import Assessment
 from assessments.models import AssessmentResult
@@ -18,6 +19,7 @@ from messaging.models import ChatMessage
 from notifications.services import create_notification_once
 from student_insights.models import StudentInsight
 from student_insights.provider import GeminiInsightGenerationProvider
+from student_insights.provider import GeminiResponseError
 from student_insights.provider import InsightGenerationProvider
 from student_insights.provider import RuleBasedInsightGenerationProvider
 from students.models import ParentStudentLink
@@ -136,21 +138,10 @@ def _model_allowed_output(
         notes.append("invalid_title")
     if not summary or len(summary) > MAX_SUMMARY_LENGTH:
         notes.append("invalid_summary")
-    if (
-        not isinstance(actions, list)
-        or len(actions) < MIN_ACTION_COUNT
-        or len(actions) > MAX_ACTION_COUNT
-    ):
+    if not _actions_are_valid(actions):
         notes.append("invalid_actions")
-    else:
-        for action in actions:
-            if (
-                not isinstance(action, str)
-                or len(action.strip()) == 0
-                or len(action) > MAX_ACTION_LENGTH
-            ):
-                notes.append("invalid_action_entry")
-                break
+    elif not _action_entries_are_valid(actions):
+        notes.append("invalid_action_entry")
 
     output_text = " ".join(
         [
@@ -162,11 +153,36 @@ def _model_allowed_output(
     if any(term in output_text for term in FORBIDDEN_OUTPUT_TERMS):
         notes.append("forbidden_term")
 
+    normalized_keywords = _normalized_expected_keywords(payload)
+    if normalized_keywords and not any(
+        keyword in output_text for keyword in normalized_keywords
+    ):
+        notes.append("missing_expected_context")
+
+    return (len(notes) == 0, notes)
+
+
+def _actions_are_valid(actions: Any) -> bool:
+    return (
+        isinstance(actions, list)
+        and MIN_ACTION_COUNT <= len(actions) <= MAX_ACTION_COUNT
+    )
+
+
+def _action_entries_are_valid(actions: list[Any]) -> bool:
+    return all(
+        isinstance(action, str)
+        and len(action.strip()) > 0
+        and len(action) <= MAX_ACTION_LENGTH
+        for action in actions
+    )
+
+
+def _normalized_expected_keywords(payload: dict[str, Any]) -> list[str]:
     expected_keywords = [
         str(payload.get("category", "")).lower(),
         *[str(tag).lower() for tag in payload.get("tags", [])],
     ]
-
     normalized_keywords: list[str] = []
     for keyword in expected_keywords:
         cleaned = keyword.strip()
@@ -176,13 +192,7 @@ def _model_allowed_output(
         normalized_keywords.append(cleaned.replace("_", " "))
         if cleaned.endswith("s") and len(cleaned) > 1:
             normalized_keywords.append(cleaned[:-1])
-
-    if expected_keywords and not any(
-        keyword and keyword in output_text for keyword in normalized_keywords
-    ):
-        notes.append("missing_expected_context")
-
-    return (len(notes) == 0, notes)
+    return normalized_keywords
 
 
 def _build_fallback_guidance(payload: dict[str, Any]) -> dict[str, Any]:
@@ -517,7 +527,13 @@ def generate_parent_guidance(
     provider = _get_provider()
     try:
         generated = provider.generate(insight_payload)
-    except Exception:
+    except (
+        GeminiResponseError,
+        KeyError,
+        RuntimeError,
+        TypeError,
+        httpx.HTTPError,
+    ):
         fallback = _build_fallback_guidance(insight_payload)
         return fallback, StudentInsight.SafetyStatus.FALLBACK, ["provider_error"]
 

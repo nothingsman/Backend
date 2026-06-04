@@ -64,6 +64,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 # APPS
 # ------------------------------------------------------------------------------
 DJANGO_APPS = [
+    "jazzmin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -450,6 +451,14 @@ CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html#worker-hijack-root-logger
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+
+# Student insights
+# ------------------------------------------------------------------------------
+STUDENT_INSIGHTS_PROVIDER = env("STUDENT_INSIGHTS_PROVIDER", default="mock")
+STUDENT_INSIGHTS_COOLDOWN_HOURS = env.int(
+    "STUDENT_INSIGHTS_COOLDOWN_HOURS",
+    default=24,
+)
 
 # django-allauth
 # ------------------------------------------------------------------------------

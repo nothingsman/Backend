@@ -437,7 +437,7 @@ class AttendanceReasonViewSet(viewsets.ModelViewSet):
     # PATCH /attendance-reasons/<id>/parent-update/
     # ------------------------------------------------------------------
     @action(detail=True, methods=["patch"], url_path="parent-update")
-    def parent_update(self, request, pk=None):
+    def parent_update(self, request, *args, **kwargs):
         """
         Parent-only endpoint to provide / confirm an absence reason.
         Only allows editing: reason_category, note, parent_confirmed.
@@ -445,6 +445,7 @@ class AttendanceReasonViewSet(viewsets.ModelViewSet):
         TODO: Add a permission class to restrict this to the student's
               linked parents (check ParentStudentLink).
         """
+        del args, kwargs
         reason = self.get_object()
         if not user_can_access_student_as_parent_or_staff(
             request.user,

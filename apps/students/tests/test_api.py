@@ -4,12 +4,15 @@ from academics.tests.factories import GradeFactory
 from academics.tests.factories import SectionFactory
 from academics.tests.factories import SubjectFactory
 from accounts.tests.factories import UserFactory
+from assessments.models import Assessment
+from assessments.models import AssessmentResult
 from branches.tests.factories import BranchAdminFactory
 from branches.tests.factories import BranchFactory
 from organizations.tests.factories import OrganizationFactory
 from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework.test import APIRequestFactory
+from student_insights.models import StudentInsight
 from student_insights.services import ManualInsightTriggerResult
 from students.api.views import ParentViewSet
 from students.api.views import StudentViewSet
@@ -19,6 +22,8 @@ from students.models import StudentAcademicYearSection
 from students.tests.factories import ParentFactory
 from students.tests.factories import ParentStudentLinkFactory
 from students.tests.factories import StudentAcademicYearSectionFactory
+from students.tests.factories import StudentBehaviourIncidentFactory
+from students.tests.factories import StudentBehaviourRemarkFactory
 from students.tests.factories import StudentFactory
 from teachers.models import HomeroomAssignment
 from teachers.models import Teacher
@@ -966,6 +971,140 @@ class TestStudentsAPI:
         assert response.status_code == status.HTTP_200_OK
         assert response.data == []
 
+    def test_teacher_can_list_student_behaviour_log(self, api_client):
+        teacher_user = UserFactory(role="TEACHER", name="Ms. Hana")
+        organization = OrganizationFactory()
+        branch = BranchFactory(school__organization=organization)
+        academic_year = AcademicYear.objects.get(
+            organization=organization,
+            branch=branch,
+            name="2025/2026",
+        )
+        grade = GradeFactory(organization=organization, branch=branch)
+        section = SectionFactory(
+            organization=organization,
+            branch=branch,
+            grade=grade,
+            academic_year=academic_year,
+        )
+        student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        teacher = Teacher.objects.create(
+            user=teacher_user,
+            organization=organization,
+            branch=branch,
+            employee_id="EMP-BEH-1",
+            specialization="Mathematics",
+        )
+        subject = SubjectFactory(
+            organization=organization,
+            branch=branch,
+            grade=grade,
+        )
+        TeacherSubjectAssignment.objects.create(
+            teacher=teacher,
+            organization=organization,
+            subject=subject,
+            section=section,
+            academic_year=academic_year,
+        )
+        StudentBehaviourIncidentFactory(
+            student=student,
+            teacher=teacher_user,
+            title="Late assignment submission",
+            description="Submitted work after the deadline.",
+            severity="MEDIUM",
+            occurred_at="2026-06-01T08:00:00Z",
+        )
+        StudentBehaviourRemarkFactory(
+            student=student,
+            teacher=teacher_user,
+            title="Positive participation",
+            description="Participated actively in discussion.",
+            severity="LOW",
+            occurred_at="2026-06-02T08:00:00Z",
+        )
+        api_client.force_authenticate(user=teacher_user)
+
+        response = api_client.get(f"/api/students/{student.id}/behaviour-log/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["type"] for item in response.data] == ["remark", "incident"]
+        assert response.data[0]["teacherName"] == "Ms. Hana"
+
+    def test_teacher_can_create_student_behaviour_entries(self, api_client):
+        teacher_user = UserFactory(role="TEACHER", name="Ms. Hana")
+        organization = OrganizationFactory()
+        branch = BranchFactory(school__organization=organization)
+        academic_year = AcademicYear.objects.get(
+            organization=organization,
+            branch=branch,
+            name="2025/2026",
+        )
+        grade = GradeFactory(organization=organization, branch=branch)
+        section = SectionFactory(
+            organization=organization,
+            branch=branch,
+            grade=grade,
+            academic_year=academic_year,
+        )
+        student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        teacher = Teacher.objects.create(
+            user=teacher_user,
+            organization=organization,
+            branch=branch,
+            employee_id="EMP-BEH-2",
+            specialization="Mathematics",
+        )
+        subject = SubjectFactory(
+            organization=organization,
+            branch=branch,
+            grade=grade,
+        )
+        TeacherSubjectAssignment.objects.create(
+            teacher=teacher,
+            organization=organization,
+            subject=subject,
+            section=section,
+            academic_year=academic_year,
+        )
+        api_client.force_authenticate(user=teacher_user)
+
+        incident_response = api_client.post(
+            f"/api/students/{student.id}/behaviour-log/",
+            {
+                "type": "incident",
+                "title": "Late assignment submission",
+                "description": "Work arrived after the deadline.",
+                "severity": "HIGH",
+            },
+            format="json",
+        )
+        remark_response = api_client.post(
+            f"/api/students/{student.id}/behaviour-log/",
+            {
+                "type": "remark",
+                "title": "Participation",
+                "description": "Asked thoughtful questions.",
+            },
+            format="json",
+        )
+
+        assert incident_response.status_code == status.HTTP_201_CREATED
+        assert incident_response.data["type"] == "incident"
+        assert incident_response.data["severity"] == "HIGH"
+        assert incident_response.data["teacherName"] == "Ms. Hana"
+        assert remark_response.status_code == status.HTTP_201_CREATED
+        assert remark_response.data["type"] == "remark"
+        assert remark_response.data["severity"] == "LOW"
+
     def test_homeroom_teacher_can_list_students_for_assigned_section(self, api_client):
         teacher_user = UserFactory(role="TEACHER")
         organization = OrganizationFactory()
@@ -1061,7 +1200,10 @@ class TestStudentsAPI:
                 ),
             )
 
-        monkeypatch.setattr("students.api.views.trigger_manual_student_insight", fake_trigger)
+        monkeypatch.setattr(
+            "students.api.views.trigger_manual_student_insight",
+            fake_trigger,
+        )
         api_client.force_authenticate(user=teacher_user)
 
         response = api_client.post(f"/api/students/{student.id}/trigger-insight/")
@@ -1185,6 +1327,92 @@ class TestStudentsAPI:
         response = api_client.get("/api/parents/my-students/")
         assert response.status_code == status.HTTP_200_OK
         assert response.data[0]["id"] == str(student.id)
+        assert response.data[0]["grade_id"] == str(section.grade_id)
+
+    def test_parent_my_student_behaviour_log_merges_incidents_and_remarks(
+        self,
+        api_client,
+        organization,
+        branch,
+        section,
+    ):
+        parent_user = UserFactory(role="PARENT")
+        parent = ParentFactory(
+            user=parent_user,
+            organizations=[organization],
+            branches=[branch],
+        )
+        student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        ParentStudentLinkFactory(student=student, parent=parent)
+        teacher = UserFactory(role="TEACHER", name="Ms. Hana")
+        older_incident = StudentBehaviourIncidentFactory(
+            student=student,
+            teacher=teacher,
+            title="Classroom disruption",
+            description="Interrupted classmates during group work.",
+            severity="HIGH",
+            occurred_at="2026-06-01T08:00:00Z",
+        )
+        newer_remark = StudentBehaviourRemarkFactory(
+            student=student,
+            teacher=teacher,
+            title="Improved focus",
+            description="Stayed focused throughout the lesson.",
+            severity="LOW",
+            occurred_at="2026-06-02T08:00:00Z",
+        )
+        api_client.force_authenticate(user=parent_user)
+
+        response = api_client.get(
+            f"/api/parents/my-students/{student.id}/behaviour-log/",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["id"] for item in response.data] == [
+            str(newer_remark.id),
+            str(older_incident.id),
+        ]
+        assert response.data[0]["type"] == "remark"
+        assert response.data[0]["teacherName"] == "Ms. Hana"
+        assert response.data[1]["type"] == "incident"
+        assert response.data[1]["severity"] == "HIGH"
+
+    def test_parent_my_student_behaviour_log_rejects_unlinked_student(
+        self,
+        api_client,
+        organization,
+        branch,
+        section,
+    ):
+        parent_user = UserFactory(role="PARENT")
+        parent = ParentFactory(
+            user=parent_user,
+            organizations=[organization],
+            branches=[branch],
+        )
+        linked_student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        ParentStudentLinkFactory(student=linked_student, parent=parent)
+        other_student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        StudentBehaviourIncidentFactory(student=other_student)
+        api_client.force_authenticate(user=parent_user)
+
+        response = api_client.get(
+            f"/api/parents/my-students/{other_student.id}/behaviour-log/",
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_student_schema_lists_manual_filters(self, api_client):
         api_client.force_authenticate(
@@ -1226,3 +1454,137 @@ class TestStudentsAPI:
             "occupation",
             "is_active",
         }.issubset(parameter_names)
+
+
+@pytest.mark.django_db
+class TestStudentInsightDemoTriggerAPI:
+    @pytest.fixture
+    def api_client(self):
+        return APIClient()
+
+    def _build_teacher_with_assignment(
+        self,
+        *,
+        organization,
+        branch,
+        section,
+    ):
+        teacher = Teacher.objects.create(
+            user=UserFactory(role="TEACHER", name="Assigned Teacher"),
+            organization=organization,
+            branch=branch,
+            employee_id="EMP-DEMO-1",
+            specialization="Mathematics",
+        )
+        subject = SubjectFactory(
+            organization=organization,
+            branch=branch,
+            grade=section.grade,
+            name="Mathematics",
+        )
+        TeacherSubjectAssignment.objects.create(
+            teacher=teacher,
+            organization=organization,
+            subject=subject,
+            section=section,
+            academic_year=section.academic_year,
+        )
+        return teacher
+
+    def test_assigned_teacher_can_trigger_student_insight_demo(
+        self,
+        api_client,
+        organization,
+        branch,
+        section,
+    ):
+        teacher = self._build_teacher_with_assignment(
+            organization=organization,
+            branch=branch,
+            section=section,
+        )
+        student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        ParentStudentLinkFactory(
+            student=student,
+            parent=ParentFactory(
+                organizations=[organization],
+                branches=[branch],
+            ),
+        )
+        assessment = SubjectFactory(
+            organization=organization,
+            branch=branch,
+            grade=section.grade,
+            name="Algebra",
+        )
+        assignment = TeacherSubjectAssignment.objects.create(
+            teacher=teacher,
+            organization=organization,
+            subject=assessment,
+            section=section,
+            academic_year=section.academic_year,
+        )
+        result = AssessmentResult.objects.create(
+            organization=organization,
+            assessment=Assessment.objects.create(
+                organization=organization,
+                branch=branch,
+                teacher_assignment=assignment,
+                title="Demo Quiz",
+                task_type=Assessment.TaskType.QUIZ,
+                description="Demo",
+                total_marks="100",
+                passing_marks="50",
+                status=Assessment.Status.PUBLISHED,
+            ),
+            student=student,
+            obtained_marks="30",
+            submission_status=AssessmentResult.SubmissionStatus.GRADED,
+        )
+        del result
+
+        api_client.force_authenticate(user=teacher.user)
+
+        response = api_client.post(
+            f"/api/students/{student.id}/trigger-insight-demo/",
+            {},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["created"] is True
+        assert response.data["category"] == StudentInsight.Category.ACADEMICS
+
+    def test_unassigned_teacher_cannot_trigger_student_insight_demo(
+        self,
+        api_client,
+        organization,
+        branch,
+        section,
+    ):
+        teacher = Teacher.objects.create(
+            user=UserFactory(role="TEACHER", name="Unassigned Teacher"),
+            organization=organization,
+            branch=branch,
+            employee_id="EMP-DEMO-2",
+            specialization="English",
+        )
+        student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+
+        api_client.force_authenticate(user=teacher.user)
+
+        response = api_client.post(
+            f"/api/students/{student.id}/trigger-insight-demo/",
+            {},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
