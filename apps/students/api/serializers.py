@@ -362,6 +362,31 @@ class StudentReadSerializer(StudentSerializer):
         academic_year = self._get_academic_year_for_response(obj)
         return academic_year.name if academic_year else None
 
+    def get_parent_details(self, obj) -> list[dict[str, str | bool | None]]:
+        parent_links = getattr(obj, "prefetched_parent_links", None)
+        if parent_links is None:
+            parent_links = obj.parent_links.select_related("parent__user")
+
+        return [
+            {
+                "id": str(link.parent_id),
+                "user": str(link.parent.user_id),
+                "full_name": self._format_parent_full_name(link.parent),
+                "relationship_type": link.relationship_type,
+                "is_primary_contact": link.is_primary_contact,
+            }
+            for link in parent_links
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        assignment = self._get_requested_assignment(instance)
+        if assignment is not None:
+            data["current_section"] = (
+                str(assignment.section_id) if assignment.section_id else None
+            )
+        return data
+
 
 class BehaviourLogEntrySerializer(serializers.Serializer):
     id = serializers.UUIDField()
@@ -434,31 +459,6 @@ def serialize_behaviour_log_entry(
     }
     serializer = BehaviourLogEntrySerializer(payload)
     return serializer.data
-
-    def get_parent_details(self, obj) -> list[dict[str, str | bool | None]]:
-        parent_links = getattr(obj, "prefetched_parent_links", None)
-        if parent_links is None:
-            parent_links = obj.parent_links.select_related("parent__user")
-
-        return [
-            {
-                "id": str(link.parent_id),
-                "user": str(link.parent.user_id),
-                "full_name": self._format_parent_full_name(link.parent),
-                "relationship_type": link.relationship_type,
-                "is_primary_contact": link.is_primary_contact,
-            }
-            for link in parent_links
-        ]
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        assignment = self._get_requested_assignment(instance)
-        if assignment is not None:
-            data["current_section"] = (
-                str(assignment.section_id) if assignment.section_id else None
-            )
-        return data
 
 
 class ParentSerializer(serializers.ModelSerializer):
