@@ -77,6 +77,13 @@ class TestParentInviteView:
         assert branch in parent.branches.all()
         mock_send_sms.assert_called_once()
         mock_send_email.assert_called_once()
+        assert (
+            mock_send_sms.call_args.kwargs["invitation_url"]
+            == response.data["invitation_url"]
+        )
+        assert mock_send_sms.call_args.kwargs["invitation_url"].startswith(
+            settings.FRONTEND_PARENT_DOMAIN,
+        )
 
     @patch("students.api.views.ParentInvitationEmail.send")
     @patch("students.api.views.send_parent_invitation_sms")

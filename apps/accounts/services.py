@@ -59,13 +59,19 @@ def get_frontend_protocol_for_user(user: User | None) -> str:
     return str(settings.FRONTEND_PROTOCOL)
 
 
-def build_frontend_url(path: str, *, user: User | None = None) -> str:
-    domain = get_frontend_domain_for_user(user).rstrip("/")
-    parsed_domain = urlsplit(domain)
+def build_frontend_base_url(*, domain: str, protocol: str) -> str:
+    normalized_domain = domain.rstrip("/")
+    parsed_domain = urlsplit(normalized_domain)
     if parsed_domain.scheme and parsed_domain.netloc:
-        base_url = domain
-    else:
-        base_url = f"{get_frontend_protocol_for_user(user)}://{domain}"
+        return normalized_domain
+    return f"{protocol}://{normalized_domain}"
+
+
+def build_frontend_url(path: str, *, user: User | None = None) -> str:
+    base_url = build_frontend_base_url(
+        domain=get_frontend_domain_for_user(user),
+        protocol=get_frontend_protocol_for_user(user),
+    )
     return f"{base_url}/{path.lstrip('/')}"
 
 
