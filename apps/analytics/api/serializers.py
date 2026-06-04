@@ -2,6 +2,35 @@ from analytics.models import InterventionLog
 from rest_framework import serializers
 
 
+class DashboardOverviewQuerySerializer(serializers.Serializer):
+    section_id = serializers.UUIDField()
+    academic_year_id = serializers.UUIDField()
+    subject_id = serializers.UUIDField(required=False)
+    section_name = serializers.CharField(required=False, allow_blank=True)
+    subject_name = serializers.CharField(required=False, allow_blank=True)
+
+
+class ParentEngagementSerializer(serializers.Serializer):
+    high = serializers.IntegerField(min_value=0)
+    moderate = serializers.IntegerField(min_value=0)
+    low = serializers.IntegerField(min_value=0)
+
+
+class PerformanceDistributionSerializer(serializers.Serializer):
+    A = serializers.IntegerField(min_value=0)
+    B = serializers.IntegerField(min_value=0)
+    C = serializers.IntegerField(min_value=0)
+    F = serializers.IntegerField(min_value=0)
+
+
+class DashboardOverviewResponseSerializer(serializers.Serializer):
+    total_students = serializers.IntegerField(min_value=0)
+    average_performance = serializers.FloatField()
+    tasks_due = serializers.IntegerField(min_value=0)
+    performance_distribution = PerformanceDistributionSerializer()
+    parent_engagement = ParentEngagementSerializer()
+
+
 class InterventionLogSerializer(serializers.ModelSerializer):
     intervention_type_display = serializers.CharField(
         source="get_intervention_type_display",

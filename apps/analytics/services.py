@@ -6,13 +6,20 @@ from datetime import timedelta
 from statistics import mean
 
 from academics.models import AcademicYear
+from academics.models import Section
+from academics.models import Subject
 from analytics.models import InterventionLog
+from assessments.models import Assessment
 from assessments.models import AssessmentResult
 from attendance.models import Attendance
 from attendance.models import AttendanceSummary
+from django.db.models import Count
+from django.db.models import Q
 from django.utils import timezone
+from messaging.models import ChatMessage
 from student_insights.models import StudentInsight
 from students.models import Student
+from students.models import StudentAcademicYearSection
 from teachers.models import TeacherSubjectAssignment
 
 COMPLETED_SUBMISSION_STATUSES = {
@@ -44,6 +51,11 @@ LOW_GRADE_HEADLINE_THRESHOLD = 60
 ACTION_GRADE_THRESHOLD = 70
 HIGH_RISK_MISSING_THRESHOLD = 3
 MEDIUM_RISK_MISSING_THRESHOLD = 1
+GRADE_BAND_A_MIN = 85
+GRADE_BAND_B_MIN = 70
+GRADE_BAND_C_MIN = 50
+PARENT_ENGAGEMENT_HIGH_MIN = 3
+PARENT_ENGAGEMENT_MODERATE_MIN = 1
 
 
 @dataclass(slots=True, frozen=True)
@@ -54,6 +66,42 @@ class GradeRecord:
     label: str
     score: float
     recorded_at: object
+
+
+def build_dashboard_overview_payload(
+    *,
+    section: Section,
+    academic_year: AcademicYear,
+    subject: Subject | None = None,
+) -> dict[str, object]:
+    student_ids = list(
+        _get_dashboard_students(
+            section=section,
+            academic_year=academic_year,
+        ).values_list("id", flat=True),
+    )
+    graded_results = list(
+        _get_dashboard_graded_results(
+            student_ids=student_ids,
+            section=section,
+            academic_year=academic_year,
+            subject=subject,
+        ),
+    )
+    student_averages = _build_student_average_percentages(graded_results)
+    average_performance = _round_or_zero(_average(list(student_averages.values())))
+
+    return {
+        "total_students": len(student_ids),
+        "average_performance": average_performance,
+        "tasks_due": _get_tasks_due_count(
+            section=section,
+            academic_year=academic_year,
+            subject=subject,
+        ),
+        "performance_distribution": _build_grade_band_distribution(student_averages),
+        "parent_engagement": _build_parent_engagement_distribution(student_ids),
+    }
 
 
 def build_student_analytics_payload(student: Student) -> dict[str, object]:
@@ -130,6 +178,127 @@ def build_student_analytics_payload(student: Student) -> dict[str, object]:
         "submission_heatmap": heatmap,
         "recommended_actions": recommended_actions,
     }
+
+
+def _get_dashboard_students(
+    *,
+    section: Section,
+    academic_year: AcademicYear,
+):
+    student_ids_for_year = StudentAcademicYearSection.objects.filter(
+        academic_year=academic_year,
+        section=section,
+    ).values_list("student_id", flat=True)
+
+    return Student.objects.filter(
+        Q(id__in=student_ids_for_year) | Q(current_section=section),
+        organization=section.organization,
+        branch=section.branch,
+    ).distinct()
+
+
+def _get_dashboard_graded_results(
+    *,
+    student_ids: list[str],
+    section: Section,
+    academic_year: AcademicYear,
+    subject: Subject | None,
+):
+    queryset = (
+        AssessmentResult.objects.select_related(
+            "assessment",
+            "assessment__teacher_assignment__subject",
+        )
+        .filter(
+            student_id__in=student_ids,
+            assessment__teacher_assignment__section=section,
+            assessment__teacher_assignment__academic_year=academic_year,
+            obtained_marks__isnull=False,
+        )
+        .order_by("student_id", "created_at", "id")
+    )
+    if subject is not None:
+        queryset = queryset.filter(assessment__teacher_assignment__subject=subject)
+    return queryset
+
+
+def _build_student_average_percentages(
+    graded_results: list[AssessmentResult],
+) -> dict[str, float]:
+    grouped_scores: dict[str, list[float]] = defaultdict(list)
+    for result in graded_results:
+        if result.percentage is not None:
+            grouped_scores[str(result.student_id)].append(result.percentage)
+
+    return {
+        student_id: round(mean(scores), 2)
+        for student_id, scores in grouped_scores.items()
+        if scores
+    }
+
+
+def _get_tasks_due_count(
+    *,
+    section: Section,
+    academic_year: AcademicYear,
+    subject: Subject | None,
+) -> int:
+    queryset = Assessment.objects.filter(
+        teacher_assignment__section=section,
+        teacher_assignment__academic_year=academic_year,
+        status=Assessment.Status.PUBLISHED,
+        due_date__gte=timezone.localdate(),
+    )
+    if subject is not None:
+        queryset = queryset.filter(teacher_assignment__subject=subject)
+    return queryset.count()
+
+
+def _build_grade_band_distribution(
+    student_averages: dict[str, float],
+) -> dict[str, int]:
+    distribution = {"A": 0, "B": 0, "C": 0, "F": 0}
+    for percentage in student_averages.values():
+        distribution[_grade_band_for_percentage(percentage)] += 1
+    return distribution
+
+
+def _grade_band_for_percentage(percentage: float) -> str:
+    if percentage >= GRADE_BAND_A_MIN:
+        return "A"
+    if percentage >= GRADE_BAND_B_MIN:
+        return "B"
+    if percentage >= GRADE_BAND_C_MIN:
+        return "C"
+    return "F"
+
+
+def _build_parent_engagement_distribution(student_ids: list[str]) -> dict[str, int]:
+    distribution = {"high": 0, "moderate": 0, "low": 0}
+    if not student_ids:
+        return distribution
+
+    message_counts: dict[str, int] = defaultdict(int)
+    for student_id, count in (
+        ChatMessage.objects.filter(
+            thread__student_id__in=student_ids,
+            sender__role="PARENT",
+        )
+        .values_list("thread__student_id")
+        .annotate(message_count=Count("id"))
+    ):
+        message_counts[str(student_id)] = count
+
+    for student_id in student_ids:
+        count = message_counts.get(str(student_id), 0)
+        if count >= PARENT_ENGAGEMENT_HIGH_MIN:
+            distribution["high"] += 1
+        elif count >= PARENT_ENGAGEMENT_MODERATE_MIN:
+            distribution["moderate"] += 1
+        else:
+            distribution["low"] += 1
+
+    return distribution
 
 
 def _get_academic_year(student: Student) -> AcademicYear | None:
