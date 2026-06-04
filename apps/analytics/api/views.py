@@ -1,7 +1,12 @@
+from academics.models import AcademicYear
+from academics.models import Section
+from academics.models import Subject
 from accounts.models import User
 from analytics.models import InterventionLog
+from analytics.services import build_dashboard_overview_payload
 from analytics.services import build_student_analytics_payload
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
@@ -13,7 +18,10 @@ from rest_framework.views import APIView
 from students.models import Student
 
 from core.api.access import scope_intervention_queryset_for_user
+from core.api.access import user_resource_access_filter
 
+from .serializers import DashboardOverviewQuerySerializer
+from .serializers import DashboardOverviewResponseSerializer
 from .serializers import InterventionLogSerializer
 from .serializers import StudentAnalyticsResponseSerializer
 
@@ -79,6 +87,77 @@ class InterventionLogViewSet(viewsets.ModelViewSet):
                 "them."
             )
             raise PermissionDenied(message)
+
+
+@extend_schema(
+    parameters=[DashboardOverviewQuerySerializer],
+    responses={200: DashboardOverviewResponseSerializer},
+)
+class DashboardOverviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        params = DashboardOverviewQuerySerializer(data=request.query_params)
+        params.is_valid(raise_exception=True)
+        validated = params.validated_data
+
+        section = get_object_or_404(
+            Section.objects.filter(
+                self._section_access_filter(request.user),
+            ).distinct(),
+            id=validated["section_id"],
+        )
+        academic_year = get_object_or_404(
+            AcademicYear.objects.filter(
+                id=validated["academic_year_id"],
+                organization=section.organization,
+                branch=section.branch,
+            ),
+        )
+        if section.academic_year_id != academic_year.id:
+            return Response(
+                {
+                    "detail": (
+                        "The provided academic_year_id does not match the section."
+                    ),
+                },
+                status=400,
+            )
+
+        subject = None
+        subject_id = validated.get("subject_id")
+        if subject_id is not None:
+            subject = get_object_or_404(
+                Subject.objects.filter(
+                    id=subject_id,
+                    organization=section.organization,
+                    branch=section.branch,
+                    grade=section.grade,
+                ),
+            )
+
+        payload = build_dashboard_overview_payload(
+            section=section,
+            academic_year=academic_year,
+            subject=subject,
+        )
+        response_serializer = DashboardOverviewResponseSerializer(payload)
+        return Response(response_serializer.data)
+
+    def _section_access_filter(self, user) -> Q:
+        return (
+            user_resource_access_filter(
+                user,
+                organization_lookup="organization",
+                branch_lookup="branch",
+            )
+            | Q(
+                teacher_assignments__teacher__user=user,
+            )
+            | Q(
+                homeroom_assignments__teacher__user=user,
+            )
+        )
 
 
 @extend_schema(

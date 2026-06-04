@@ -13,6 +13,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework.test import APIRequestFactory
 from student_insights.models import StudentInsight
+from student_insights.services import ManualInsightTriggerResult
 from students.api.views import ParentViewSet
 from students.api.views import StudentViewSet
 from students.models import Parent
@@ -1145,6 +1146,72 @@ class TestStudentsAPI:
 
         assert response.status_code == status.HTTP_200_OK
         assert [item["id"] for item in response.data] == [str(visible_student.id)]
+
+    def test_teacher_can_trigger_student_insight(self, api_client, monkeypatch):
+        teacher_user = UserFactory(role="TEACHER")
+        organization = OrganizationFactory()
+        branch = BranchFactory(school__organization=organization)
+        academic_year = AcademicYear.objects.get(
+            organization=organization,
+            branch=branch,
+            name="2025/2026",
+        )
+        grade = GradeFactory(organization=organization, branch=branch)
+        section = SectionFactory(
+            organization=organization,
+            branch=branch,
+            grade=grade,
+            academic_year=academic_year,
+        )
+        student = StudentFactory(
+            organization=organization,
+            branch=branch,
+            current_section=section,
+        )
+        teacher = Teacher.objects.create(
+            user=teacher_user,
+            organization=organization,
+            branch=branch,
+            employee_id="EMP-STU-TRIGGER",
+            specialization="Mathematics",
+        )
+        subject = SubjectFactory(
+            organization=organization,
+            branch=branch,
+            grade=grade,
+        )
+        TeacherSubjectAssignment.objects.create(
+            teacher=teacher,
+            organization=organization,
+            subject=subject,
+            section=section,
+            academic_year=academic_year,
+        )
+
+        def fake_trigger(*, student_id, triggered_by_user):
+            assert student_id == str(student.id)
+            assert triggered_by_user == teacher_user
+            return ManualInsightTriggerResult(
+                created=False,
+                reason_code="NO_QUALIFYING_SIGNAL",
+                message=(
+                    "No current qualifying grade, attendance, homework, or "
+                    "message signal was found for this student."
+                ),
+            )
+
+        monkeypatch.setattr(
+            "students.api.views.trigger_manual_student_insight",
+            fake_trigger,
+        )
+        api_client.force_authenticate(user=teacher_user)
+
+        response = api_client.post(f"/api/students/{student.id}/trigger-insight/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["created"] is False
+        assert response.data["reason_code"] == "NO_QUALIFYING_SIGNAL"
+        assert "demo" not in response.data["message"].lower()
 
     def test_teacher_can_list_parents_and_links_for_assigned_section(self, api_client):
         teacher_user = UserFactory(role="TEACHER")

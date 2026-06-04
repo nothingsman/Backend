@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 import pytest
@@ -28,6 +29,7 @@ from teachers.models import Teacher
 from teachers.models import TeacherSubjectAssignment
 
 NOW = timezone.now
+GEMINI_TIMEOUT_SECONDS = 5
 
 
 def _build_assessment_result(student, **overrides):
@@ -108,6 +110,113 @@ def _build_assessment_result(student, **overrides):
 
 @pytest.mark.django_db
 class TestStudentInsightServices:
+    def test_generate_parent_guidance_uses_gemini_when_response_is_valid(
+        self,
+        monkeypatch,
+        settings,
+    ):
+        settings.STUDENT_INSIGHTS_PROVIDER = "gemini"
+        settings.GEMINI_API_KEY = "test-key"
+        settings.GEMINI_MODEL = "gemini-test"
+        settings.GEMINI_TIMEOUT_SECONDS = GEMINI_TIMEOUT_SECONDS
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": json.dumps(
+                                            {
+                                                "title": "Academic support update",
+                                                "summary": (
+                                                    "Recent academic performance "
+                                                    "suggests extra support may help."
+                                                ),
+                                                "recommended_actions": [
+                                                    (
+                                                        "Review the latest schoolwork "
+                                                        "together."
+                                                    ),
+                                                    (
+                                                        "Contact the teacher if help "
+                                                        "is needed."
+                                                    ),
+                                                ],
+                                                "confidence_label": "GEMINI",
+                                            },
+                                        ),
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                }
+
+        def fake_post(url, *, params, json, timeout):
+            assert "gemini-test:generateContent" in url
+            assert params == {"key": "test-key"}
+            assert timeout == GEMINI_TIMEOUT_SECONDS
+            assert "Payload:" in json["contents"][0]["parts"][0]["text"]
+            return FakeResponse()
+
+        monkeypatch.setattr("student_insights.provider.httpx.post", fake_post)
+
+        generated, safety_status, notes = generate_parent_guidance(
+            {
+                "category": "ACADEMICS",
+                "risk_band": "LOW",
+                "concern_summary": (
+                    "Recent academic performance suggests extra support may help."
+                ),
+                "tags": ["academics"],
+                "fallback_title": "Academic support update",
+                "suggested_actions": [],
+            },
+        )
+
+        assert safety_status == StudentInsight.SafetyStatus.APPROVED
+        assert notes == []
+        assert generated["confidence_label"] == "GEMINI"
+        assert "rule based" not in generated["summary"].lower()
+
+    def test_generate_parent_guidance_falls_back_on_provider_error(
+        self,
+        monkeypatch,
+        settings,
+    ):
+        settings.STUDENT_INSIGHTS_PROVIDER = "gemini"
+        settings.GEMINI_API_KEY = "test-key"
+
+        def fake_post(*args, **kwargs):
+            del args, kwargs
+            msg = "provider unavailable"
+            raise RuntimeError(msg)
+
+        monkeypatch.setattr("student_insights.provider.httpx.post", fake_post)
+
+        generated, safety_status, notes = generate_parent_guidance(
+            {
+                "category": "ACADEMICS",
+                "risk_band": "LOW",
+                "concern_summary": (
+                    "Recent performance suggests additional support may help."
+                ),
+                "tags": ["academics"],
+                "fallback_title": "Academic support update",
+                "suggested_actions": [],
+            },
+        )
+
+        assert safety_status == StudentInsight.SafetyStatus.FALLBACK
+        assert notes == ["provider_error"]
+        assert generated["confidence_label"] == "FALLBACK"
+
     def test_generate_parent_guidance_falls_back_on_policy_violation(self, monkeypatch):
         class UnsafeProvider:
             def generate(self, payload):
@@ -305,3 +414,4 @@ class TestStudentInsightServices:
         assert second.insight is not None
         assert second.reused_existing is True
         assert second.insight.id == first.insight.id
+        assert "demo" not in second.message.lower()

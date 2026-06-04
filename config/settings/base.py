@@ -344,6 +344,14 @@ ETRADE_API_USER_AGENT = env(
     "ETRADE_API_USER_AGENT",
     default="Mozilla/5.0",
 )
+STUDENT_INSIGHTS_PROVIDER = env("STUDENT_INSIGHTS_PROVIDER", default="gemini")
+GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
+GEMINI_MODEL = env("GEMINI_MODEL", default="gemini-2.0-flash")
+GEMINI_TIMEOUT_SECONDS = env.int("GEMINI_TIMEOUT_SECONDS", default=10)
+STUDENT_INSIGHTS_COOLDOWN_HOURS = env.int(
+    "STUDENT_INSIGHTS_COOLDOWN_HOURS",
+    default=24,
+)
 
 # ADMIN
 # ------------------------------------------------------------------------------
