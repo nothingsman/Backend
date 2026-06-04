@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 from typing import TYPE_CHECKING
 
 from django.conf import settings
-from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from drf_spectacular.utils import extend_schema_view
 from rest_framework import status
@@ -20,7 +18,6 @@ from core.api.serializers import ApiErrorResponseSerializer
 from core.api.serializers import EmptyDataResponseSerializer
 from media.models import MediaFile
 from media.models import StatusChoices
-from media.models import UploadFingerprint
 from media.storage import S3StorageClient
 
 from .serializers import DownloadUrlResponseEnvelopeSerializer
@@ -41,8 +38,6 @@ from .serializers import UploadResponseSerializer
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from uuid import UUID
-
     from rest_framework.request import Request
 
 
@@ -94,29 +89,6 @@ class MediaUploadViewSet(ApiEnvelopeMixin, GenericViewSet):
         if self.action == "get_download_url":
             return DownloadUrlResponseSerializer
         return MediaFileSerializer
-
-    def _generate_fingerprint(
-        self,
-        user_id: UUID,
-        file_name: str,
-        content_type: str,
-    ) -> str:
-        settings_dict = settings.MEDIA_UPLOAD_SETTINGS
-        window_seconds = settings_dict["FINGERPRINT_WINDOW"]
-
-        now = timezone.now()
-        window_start_timestamp = (
-            int(now.timestamp()) // window_seconds
-        ) * window_seconds
-        window_hour = timezone.datetime.fromtimestamp(
-            window_start_timestamp,
-            tz=now.tzinfo,
-        )
-
-        fingerprint_input = (
-            f"{user_id}{file_name}{content_type}{window_hour.isoformat()}"
-        )
-        return hashlib.sha256(fingerprint_input.encode()).hexdigest()
 
     def _generate_storage_key(self, media_id: str, file_name: str) -> str:
         user_id = self.request.user.id
@@ -201,34 +173,6 @@ class MediaUploadViewSet(ApiEnvelopeMixin, GenericViewSet):
         file_name = serializer.validated_data["file_name"]
         content_type = serializer.validated_data["content_type"]
 
-        fingerprint = self._generate_fingerprint(
-            request.user.id,
-            file_name,
-            content_type,
-        )
-
-        try:
-            existing_fp = UploadFingerprint.objects.select_related("media_file").get(
-                fingerprint=fingerprint,
-            )
-            media = existing_fp.media_file
-            logger.info(
-                "Duplicate upload detected: user=%s, file_name=%s, "
-                "returning existing media_id=%s",
-                request.user.id,
-                file_name,
-                media.id,
-            )
-            upload_id = self._get_storage_client().create_multipart_upload(
-                media.key,
-                content_type=content_type,
-            )
-            response_data = self._build_upload_response(media, upload_id)
-            response_serializer = UploadResponseSerializer(response_data)
-            return Response(response_serializer.data, status=status.HTTP_200_OK)
-        except UploadFingerprint.DoesNotExist:
-            pass
-
         settings_dict = settings.MEDIA_UPLOAD_SETTINGS
         bucket = settings_dict["BUCKET_NAME"]
 
@@ -242,11 +186,6 @@ class MediaUploadViewSet(ApiEnvelopeMixin, GenericViewSet):
 
         media.key = self._generate_storage_key(str(media.id), file_name)
         media.save(update_fields=["key"])
-
-        UploadFingerprint.objects.create(
-            fingerprint=fingerprint,
-            media_file=media,
-        )
 
         client = self._get_storage_client()
         upload_id = client.create_multipart_upload(

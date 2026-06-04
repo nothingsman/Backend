@@ -184,6 +184,9 @@ class User(UUIDModel, TimeStampedModel, AbstractUser):
         except Parent.DoesNotExist:
             return None
 
+    def __str__(self) -> str:
+        return self.email or self.name or self.phone_number or str(self.pk)
+
 
 class ApprovalLoginToken(UUIDModel, TimeStampedModel):
     user = models.ForeignKey(
