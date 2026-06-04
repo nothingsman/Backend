@@ -9,6 +9,8 @@ from students.models import Parent
 from students.models import ParentStudentLink
 from students.models import Student
 from students.models import StudentAcademicYearSection
+from students.models import StudentBehaviourIncident
+from students.models import StudentBehaviourRemark
 
 
 class StudentFactory(DjangoModelFactory):
@@ -85,3 +87,29 @@ class StudentAcademicYearSectionFactory(DjangoModelFactory):
 
     class Meta:
         model = StudentAcademicYearSection
+
+
+class StudentBehaviourIncidentFactory(DjangoModelFactory):
+    student = factory.SubFactory(StudentFactory)
+    teacher = factory.SubFactory(UserFactory, role="TEACHER")
+    title = factory.Sequence(lambda n: f"Incident {n + 1}")
+    description = factory.Faker("sentence")
+    severity = "MEDIUM"
+    occurred_at = factory.Faker("date_time_this_year")
+    source = "Teacher Incident"
+
+    class Meta:
+        model = StudentBehaviourIncident
+
+
+class StudentBehaviourRemarkFactory(DjangoModelFactory):
+    student = factory.SubFactory(StudentFactory)
+    teacher = factory.SubFactory(UserFactory, role="TEACHER")
+    title = factory.Sequence(lambda n: f"Remark {n + 1}")
+    description = factory.Faker("sentence")
+    severity = "LOW"
+    occurred_at = factory.Faker("date_time_this_year")
+    source = "Teacher Remark"
+
+    class Meta:
+        model = StudentBehaviourRemark

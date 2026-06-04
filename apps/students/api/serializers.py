@@ -9,6 +9,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+from django.utils import timezone
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
@@ -17,6 +18,8 @@ from students.models import Parent
 from students.models import ParentStudentLink
 from students.models import Student
 from students.models import StudentAcademicYearSection
+from students.models import StudentBehaviourIncident
+from students.models import StudentBehaviourRemark
 
 from core.api.access import user_can_access_branch
 from core.services.pii import normalize_phone_number
@@ -383,6 +386,79 @@ class StudentReadSerializer(StudentSerializer):
                 str(assignment.section_id) if assignment.section_id else None
             )
         return data
+
+
+class BehaviourLogEntrySerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    type = serializers.ChoiceField(choices=["incident", "remark"])
+    title = serializers.CharField()
+    description = serializers.CharField()
+    severity = serializers.CharField()
+    teacherName = serializers.CharField(allow_blank=True)
+    source = serializers.CharField()
+    occurredAt = serializers.DateTimeField(allow_null=True)
+    createdAt = serializers.DateTimeField()
+
+
+class StudentBehaviourLogCreateSerializer(serializers.Serializer):
+    type = serializers.ChoiceField(choices=["incident", "remark"])
+    title = serializers.CharField(max_length=255)
+    description = serializers.CharField(allow_blank=True)
+    severity = serializers.ChoiceField(
+        choices=["LOW", "MEDIUM", "HIGH"],
+        required=False,
+    )
+
+    def create(self, validated_data):
+        request = self.context["request"]
+        student = self.context["student"]
+        entry_type = validated_data["type"]
+        severity = validated_data.get("severity")
+
+        if entry_type == "incident":
+            instance = StudentBehaviourIncident.objects.create(
+                student=student,
+                teacher=request.user,
+                title=validated_data["title"],
+                description=validated_data["description"],
+                severity=severity or StudentBehaviourIncident.Severity.MEDIUM,
+                occurred_at=timezone.now(),
+                source="Teacher Incident",
+            )
+            return serialize_behaviour_log_entry("incident", instance)
+
+        instance = StudentBehaviourRemark.objects.create(
+            student=student,
+            teacher=request.user,
+            title=validated_data["title"],
+            description=validated_data["description"],
+            severity=severity or StudentBehaviourRemark.Severity.LOW,
+            occurred_at=timezone.now(),
+            source="Teacher Remark",
+        )
+        return serialize_behaviour_log_entry("remark", instance)
+
+
+def serialize_behaviour_log_entry(
+    entry_type: str,
+    instance: StudentBehaviourIncident | StudentBehaviourRemark,
+) -> dict[str, object]:
+    teacher_name = (
+        instance.teacher.name if instance.teacher and instance.teacher.name else ""
+    )
+    payload = {
+        "id": instance.id,
+        "type": entry_type,
+        "title": instance.title,
+        "description": instance.description,
+        "severity": instance.severity,
+        "teacherName": teacher_name,
+        "source": instance.source,
+        "occurredAt": instance.occurred_at,
+        "createdAt": instance.created_at,
+    }
+    serializer = BehaviourLogEntrySerializer(payload)
+    return serializer.data
 
 
 class ParentSerializer(serializers.ModelSerializer):
