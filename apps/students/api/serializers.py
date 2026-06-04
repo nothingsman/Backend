@@ -394,10 +394,10 @@ class BehaviourLogEntrySerializer(serializers.Serializer):
     title = serializers.CharField()
     description = serializers.CharField()
     severity = serializers.CharField()
-    teacherName = serializers.CharField(allow_blank=True)
+    teacher_name = serializers.CharField(allow_blank=True)
     source = serializers.CharField()
-    occurredAt = serializers.DateTimeField(allow_null=True)
-    createdAt = serializers.DateTimeField()
+    occurred_at = serializers.DateTimeField(allow_null=True)
+    created_at = serializers.DateTimeField()
 
 
 class StudentBehaviourLogCreateSerializer(serializers.Serializer):
@@ -452,13 +452,23 @@ def serialize_behaviour_log_entry(
         "title": instance.title,
         "description": instance.description,
         "severity": instance.severity,
-        "teacherName": teacher_name,
+        "teacher_name": teacher_name,
         "source": instance.source,
-        "occurredAt": instance.occurred_at,
-        "createdAt": instance.created_at,
+        "occurred_at": instance.occurred_at,
+        "created_at": instance.created_at,
     }
     serializer = BehaviourLogEntrySerializer(payload)
-    return serializer.data
+    return {
+        "id": serializer.data["id"],
+        "type": serializer.data["type"],
+        "title": serializer.data["title"],
+        "description": serializer.data["description"],
+        "severity": serializer.data["severity"],
+        "teacherName": serializer.data["teacher_name"],
+        "source": serializer.data["source"],
+        "occurredAt": serializer.data["occurred_at"],
+        "createdAt": serializer.data["created_at"],
+    }
 
 
 class ParentSerializer(serializers.ModelSerializer):

@@ -497,6 +497,47 @@ class StudentViewSet(viewsets.ModelViewSet):
         )
         return Response(serializer.data)
 
+    @extend_schema(
+        summary="Manually trigger a student insight",
+        responses={200: ManualStudentInsightTriggerResponseSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="trigger-insight")
+    def trigger_insight(self, request, **kwargs):
+        del kwargs
+        if request.user.role != User.Role.TEACHER:
+            return Response(
+                {"detail": "Only teachers can trigger student insights."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        student = self.get_object()
+        result = trigger_manual_student_insight(
+            student_id=str(student.id),
+            triggered_by_user=request.user,
+        )
+        payload = {
+            "created": result.created,
+            "reused_existing": result.reused_existing,
+            "message": result.message,
+            "reason_code": result.reason_code,
+            "source_event_type": result.source_event_type,
+            "source_model": result.source_model,
+            "source_id": result.source_id,
+        }
+        if result.insight is not None:
+            payload.update(
+                {
+                    "insight_id": str(result.insight.id),
+                    "category": result.insight.category,
+                    "risk_band": result.insight.risk_band,
+                    "delivery_status": result.insight.delivery_status,
+                },
+            )
+
+        serializer = ManualStudentInsightTriggerResponseSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
     # ------------------------------------------------------------------
     # GET /students/by-grade/?grade=<id>[&status=][&section=]
     # ------------------------------------------------------------------
