@@ -89,6 +89,6 @@ USER django
 
 RUN DATABASE_URL="" \
   DJANGO_SETTINGS_MODULE="config.settings.test" \
-  python manage.py compilemessages
+  python manage.py compilemessages --ignore ".venv/lib/python3.14/site-packages/jazzmin/*"
 
 ENTRYPOINT ["/entrypoint"]
