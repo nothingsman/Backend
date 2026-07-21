@@ -46,7 +46,7 @@ dependencies = [
   "httpx==0.28.1",
   "openpyxl",
   "pandas",
-  "pillow==12.2.0",
+  "pillow==12.3.0",
   "psycopg[c]==3.3.4",
   "python-slugify==8.0.4",
   "redis==7.4.0",
